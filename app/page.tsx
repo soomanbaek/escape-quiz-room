@@ -31,9 +31,7 @@ export default function HomePage() {
               <br />
               힌트를 사용하면 30초의 패널티가 추가됩니다.
             </p>
-            <p className="text-sm text-muted-foreground">
-              팀당 플레이어 1명 + 관전자 6명이 함께 참여할 수 있습니다
-            </p>
+
           </div>
 
           {/* Team Selection */}
