@@ -153,7 +153,7 @@ export default function AdminPage() {
   }, [])
 
   const { data: gameData, mutate } = useSWR(authed ? "/api/game" : null, fetcher, {
-    refreshInterval: 500,
+    refreshInterval: 2000,
   })
 
   const [elapsedTime, setElapsedTime] = useState(0)

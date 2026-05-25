@@ -16,14 +16,78 @@ function createClient() {
   )
 }
 
+// 세션 ID만 빠르게 조회 (auto-create 없음 — heartbeat/join 전용)
+export async function getLatestSession() {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from("game_sessions")
+    .select("id, is_started, start_time")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data
+}
+
+// 팀 페이지 GET에 필요한 모든 데이터를 최소 쿼리로 조회
+export async function getTeamPageData(teamId: number) {
+  const session = await getOrCreateGameSession()
+  const supabase = createClient()
+  const since = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString()
+
+  // 팀 정보 + 멤버 수 병렬 조회
+  const [{ data: team }, { count: memberCount }] = await Promise.all([
+    supabase.from("teams").select("*").eq("session_id", session.id).eq("team_id", teamId).single(),
+    supabase.from("team_members").select("*", { count: "exact", head: true })
+      .eq("session_id", session.id).eq("team_id", teamId).gte("last_seen", since)
+  ])
+
+  if (!team) return null
+
+  const { data: question } = await supabase
+    .from("questions")
+    .select("question_number, type, question, hint")
+    .eq("session_id", session.id)
+    .eq("question_number", team.current_question)
+    .single()
+
+  let finishedTeams: { teamId: number; teamName: string; endTime: number | null; penaltySeconds: number }[] | null = null
+  if (team.is_finished) {
+    const { data: ft } = await supabase
+      .from("teams")
+      .select("team_id, team_name, end_time, penalty_seconds")
+      .eq("session_id", session.id)
+      .eq("is_finished", true)
+    finishedTeams = (ft || []).map(t => ({
+      teamId: t.team_id,
+      teamName: t.team_name,
+      endTime: t.end_time ? new Date(t.end_time).getTime() : null,
+      penaltySeconds: t.penalty_seconds
+    }))
+  }
+
+  return {
+    sessionId: session.id,
+    isStarted: session.is_started,
+    startTime: session.start_time ? new Date(session.start_time).getTime() : null,
+    team: { ...transformTeam(team), memberCount: memberCount || 0 },
+    currentQuestion: question ? {
+      id: question.question_number,
+      type: (question.type || "text") as "text" | "qr" | "photo",
+      question: question.question,
+      hint: question.hint
+    } : null,
+    finishedTeams
+  }
+}
+
 // 현재 활성 게임 세션 가져오기 (없으면 생성)
 export async function getOrCreateGameSession() {
   const supabase = createClient()
-  
+
   // 가장 최근 세션 가져오기
   const { data: sessions } = await supabase
     .from("game_sessions")
-    .select("*")
+    .select("id, is_started, start_time, created_at")
     .order("created_at", { ascending: false })
     .limit(1)
   
@@ -147,10 +211,17 @@ export async function getActiveMemberCounts(sessionId: string): Promise<Record<n
   return counts
 }
 
-// 특정 팀의 활성 접속 인원 수
+// 특정 팀의 활성 접속 인원 수 (COUNT 쿼리로 최적화)
 export async function getActiveMemberCount(sessionId: string, teamId: number): Promise<number> {
-  const counts = await getActiveMemberCounts(sessionId)
-  return counts[teamId] || 0
+  const supabase = createClient()
+  const since = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString()
+  const { count } = await supabase
+    .from("team_members")
+    .select("*", { count: "exact", head: true })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .gte("last_seen", since)
+  return count || 0
 }
 
 // 팀 입장 (멀티 디바이스 - 누구나 입장 가능)

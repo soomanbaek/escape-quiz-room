@@ -107,10 +107,7 @@ export default function TeamPlayPage() {
   const [nickname, setNickname] = useState<string>("")
 
   const { data, mutate } = useSWR(`/api/team/${teamId}`, fetcher, {
-    refreshInterval: 500
-  })
-  const { data: gameData } = useSWR("/api/game", fetcher, {
-    refreshInterval: 500
+    refreshInterval: 1000
   })
 
   const [answer, setAnswer] = useState("")
@@ -133,8 +130,8 @@ export default function TeamPlayPage() {
   const team = data?.team
   const currentQuestion = data?.currentQuestion
   const questionType: "text" | "qr" | "photo" = currentQuestion?.type || "text"
-  const isGameStarted = gameData?.isStarted
-  const gameStartTime = gameData?.startTime
+  const isGameStarted = data?.isStarted
+  const gameStartTime = data?.startTime
 
   // 세션(디바이스) ID 초기화
   useEffect(() => {
@@ -383,11 +380,11 @@ export default function TeamPlayPage() {
 
   // 탈출 성공 화면
   if (team.isFinished) {
-    const ranking = gameData?.teams
-      ?.filter((t: { isFinished: boolean }) => t.isFinished)
-      ?.sort((a: { endTime: number; penaltySeconds: number }, b: { endTime: number; penaltySeconds: number }) => {
-        const aTime = (a.endTime - gameData.startTime) + (a.penaltySeconds * 1000)
-        const bTime = (b.endTime - gameData.startTime) + (b.penaltySeconds * 1000)
+    const startTime = data?.startTime || 0
+    const ranking = data?.finishedTeams
+      ?.sort((a: { endTime: number | null; penaltySeconds: number }, b: { endTime: number | null; penaltySeconds: number }) => {
+        const aTime = ((a.endTime || 0) - startTime) + (a.penaltySeconds * 1000)
+        const bTime = ((b.endTime || 0) - startTime) + (b.penaltySeconds * 1000)
         return aTime - bTime
       })
       ?.findIndex((t: { teamId: number }) => t.teamId === team.teamId) + 1 || 0
