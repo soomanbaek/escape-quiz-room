@@ -285,6 +285,35 @@ export async function registerPlayer(sessionId: string, teamId: number, playerSe
   return { success: true, team: updatedTeam }
 }
 
+// 팀 플레이어 세션 강제 초기화 (어드민용)
+export async function resetTeamPlayer(sessionId: string, teamId: number) {
+  const supabase = createClient()
+
+  await supabase
+    .from("teams")
+    .update({ has_player: false, player_session_id: null })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+
+  return true
+}
+
+// 팀 이름 변경
+export async function updateTeamName(sessionId: string, teamId: number, newName: string) {
+  const supabase = createClient()
+
+  const trimmed = newName.trim()
+  if (!trimmed) return false
+
+  await supabase
+    .from("teams")
+    .update({ team_name: trimmed })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+
+  return true
+}
+
 // 플레이어 해제
 export async function unregisterPlayer(sessionId: string, teamId: number, playerSessionId: string) {
   const supabase = createClient()

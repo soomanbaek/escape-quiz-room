@@ -13,3 +13,10 @@ __v0_jsx-dev-runtime.ts
 node_modules
 .next/
 .DS_Store
+
+# Reference materials (not needed in repo)
+problem/
+*.pdf
+
+# Build artifacts
+tsconfig.tsbuildinfo

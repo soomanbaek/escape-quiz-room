@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Eye, Users } from "lucide-react"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -22,13 +22,11 @@ function generateSessionId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36)
 }
 
-type Role = "none" | "player" | "spectator"
-
 export default function TeamPlayPage() {
   const params = useParams()
   const teamId = params.teamId as string
 
-  const [role, setRole] = useState<Role>("none")
+  const [isPlayer, setIsPlayer] = useState(false)
   const [sessionId, setSessionId] = useState<string>("")
   const [playerError, setPlayerError] = useState<string>("")
 
@@ -86,8 +84,15 @@ export default function TeamPlayPage() {
     lastQuestionRef.current = q
   }, [team?.currentQuestion])
 
+  // 새로고침 시 세션 ID가 일치하면 자동 재접속
+  useEffect(() => {
+    if (sessionId && team?.playerSessionId && team.playerSessionId === sessionId) {
+      setIsPlayer(true)
+    }
+  }, [sessionId, team?.playerSessionId])
+
   // 플레이어로 등록
-  const handleSelectPlayer = useCallback(async () => {
+  const handleRegister = useCallback(async () => {
     if (!sessionId) return
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
@@ -96,22 +101,17 @@ export default function TeamPlayPage() {
     })
     const result = await res.json()
     if (result.success) {
-      setRole("player")
+      setIsPlayer(true)
       setPlayerError("")
     } else {
-      setPlayerError("이미 다른 플레이어가 접속 중입니다!")
+      setPlayerError("이미 다른 플레이어가 접속 중입니다.")
     }
   }, [teamId, sessionId])
-
-  // 관전자로 접속
-  const handleSelectSpectator = useCallback(() => {
-    setRole("spectator")
-  }, [])
 
   // 정답 제출
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!answer.trim() || role !== "player") return
+    if (!answer.trim() || !isPlayer) return
 
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
@@ -136,11 +136,11 @@ export default function TeamPlayPage() {
     }
 
     mutate()
-  }, [answer, teamId, role, mutate])
+  }, [answer, teamId, isPlayer, mutate])
 
   // 힌트 사용
   const handleUseHint = useCallback(async () => {
-    if (role !== "player") return
+    if (!isPlayer) return
     await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -148,7 +148,7 @@ export default function TeamPlayPage() {
     })
     setShowHint(true)
     mutate()
-  }, [teamId, role, mutate])
+  }, [teamId, isPlayer, mutate])
 
   if (!team) {
     return (
@@ -166,47 +166,38 @@ export default function TeamPlayPage() {
     ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
     : elapsedTime + (team.penaltySeconds * 1000)
 
-  // 역할 선택 화면
-  if (role === "none") {
+  // 입장 화면
+  if (!isPlayer) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
-        <Card className="w-full max-w-lg border-border/50 animate-fade-in-up relative z-10">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+        <Card className="w-full max-w-sm border-border/50 animate-fade-in-up relative z-10">
           <CardHeader className="text-center pb-2">
             <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mb-4 animate-float">
               <Users className="w-10 h-10 text-primary" />
             </div>
-            <CardTitle className="text-3xl font-bold">{team.teamName}</CardTitle>
+            <CardTitle className="text-3xl font-bold">Team {team.teamName}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6 pt-4">
-            <p className="text-center text-muted-foreground text-lg">역할을 선택해주세요</p>
-            <div className="grid gap-4">
-              <Button
-                onClick={handleSelectPlayer}
-                className="h-20 text-xl bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
-                disabled={team.hasPlayer}
-              >
-                <Gamepad2 className="w-7 h-7 mr-3" />
-                플레이어로 참가
-                {team.hasPlayer && " (접속 중)"}
-              </Button>
-              <Button
-                onClick={handleSelectSpectator}
-                variant="secondary"
-                className="h-20 text-xl hover:bg-secondary/80 transition-all duration-300"
-              >
-                <Eye className="w-7 h-7 mr-3" />
-                관전자로 참가
-              </Button>
-            </div>
+          <CardContent className="space-y-4 pt-4">
+            <Button
+              onClick={handleRegister}
+              className="w-full h-16 text-xl bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
+              disabled={team.hasPlayer}
+            >
+              <Gamepad2 className="w-6 h-6 mr-3" />
+              입장하기
+            </Button>
             {playerError && (
-              <p className="text-center text-destructive text-lg font-medium animate-fade-in">
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-center text-sm font-medium animate-fade-in">
                 {playerError}
+              </div>
+            )}
+            {team.hasPlayer && !playerError && (
+              <p className="text-center text-sm text-muted-foreground animate-fade-in">
+                이미 다른 플레이어가 접속 중입니다.
               </p>
             )}
-            <p className="text-center text-sm text-muted-foreground">
-              플레이어는 팀당 1명만 가능합니다
-            </p>
           </CardContent>
         </Card>
       </div>
@@ -226,17 +217,8 @@ export default function TeamPlayPage() {
             <div>
               <h2 className="text-3xl font-bold text-foreground mb-2">Team {team.teamName}</h2>
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary text-lg">
-                {role === "player" ? (
-                  <>
-                    <Gamepad2 className="w-5 h-5 text-primary" />
-                    <span>플레이어</span>
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-5 h-5 text-muted-foreground" />
-                    <span>관전자</span>
-                  </>
-                )}
+                <Gamepad2 className="w-5 h-5 text-primary" />
+                <span>플레이어</span>
               </div>
             </div>
             <p className="text-xl text-muted-foreground">게임 시작을 기다리는 중...</p>
@@ -295,154 +277,146 @@ export default function TeamPlayPage() {
 
   // 게임 플레이 화면
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 relative overflow-hidden">
+    <div className="h-dvh bg-background flex flex-col relative overflow-hidden">
       <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
-      <div className="max-w-3xl mx-auto space-y-6 relative z-10">
-        {/* Header */}
-        <div className="flex items-center justify-between animate-fade-in-up">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-3xl font-bold text-foreground">Team {team.teamName}</h1>
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm transition-all ${
-                role === "player"
-                  ? "bg-primary/20 text-primary border border-primary/30"
-                  : "bg-secondary text-muted-foreground"
-              }`}>
-                {role === "player" ? (
-                  <>
-                    <Gamepad2 className="w-4 h-4" />
-                    플레이어
-                  </>
-                ) : (
-                  <>
-                    <Eye className="w-4 h-4" />
-                    관전자
-                  </>
-                )}
+
+      {/* Sticky Header */}
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-border/50 bg-background/80 backdrop-blur-sm relative z-20 animate-fade-in-up" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold text-foreground truncate">Team {team.teamName}</h1>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-primary/20 text-primary border border-primary/30">
+                <Gamepad2 className="w-3 h-3" />
+                플레이어
               </span>
             </div>
-            <p className="text-lg text-muted-foreground">
+            <p className="text-sm text-muted-foreground mt-0.5">
               문제 {team.currentQuestion} / {TOTAL_QUESTIONS}
             </p>
           </div>
-          <div className="text-right">
-            <div className={`text-4xl md:text-5xl font-mono font-bold text-primary ${
+          <div className="text-right shrink-0">
+            <div className={`text-3xl font-mono font-bold text-primary ${
               isGameStarted && !team.isFinished ? "animate-timer-blink" : ""
             }`}>
               {formatTime(totalTime)}
             </div>
             {team.penaltySeconds > 0 && (
-              <div className="text-sm text-destructive mt-1 animate-fade-in">
+              <div className="text-xs text-destructive animate-fade-in">
                 +{team.penaltySeconds}초 패널티
               </div>
             )}
           </div>
         </div>
-
         {/* Progress Bar */}
-        <div className="w-full bg-secondary rounded-full h-3 overflow-hidden animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
+        <div className="max-w-3xl mx-auto mt-3 w-full bg-secondary rounded-full h-1.5 overflow-hidden">
           <div
-            className="bg-primary h-3 rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_oklch(0.75_0.18_145_/_0.5)]"
+            className="bg-primary h-1.5 rounded-full transition-all duration-700 ease-out shadow-[0_0_6px_oklch(0.75_0.18_145_/_0.5)]"
             style={{ width: `${((team.currentQuestion - 1) / TOTAL_QUESTIONS) * 100}%` }}
           />
         </div>
+      </div>
 
-        {/* Question Card */}
-        <Card
-          className={`border-border/50 transition-all duration-500 animate-fade-in-up ${
-            isFlashing
-              ? "border-primary/70 shadow-[0_0_40px_oklch(0.75_0.18_145_/_0.25)] bg-primary/5"
-              : ""
-          }`}
-          style={{ animationDelay: "0.1s" }}
-        >
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl text-muted-foreground">
-              문제 {currentQuestion?.id}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Question text — re-animates on question change */}
-            <div key={questionKey} className="animate-fade-in-up">
-              <p className="text-2xl md:text-3xl text-foreground leading-relaxed">
-                {currentQuestion?.question}
-              </p>
-            </div>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto relative z-10">
+        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+          {/* Question Card */}
+          <Card
+            className={`border-border/50 transition-all duration-500 animate-fade-in-up ${
+              isFlashing
+                ? "border-primary/70 shadow-[0_0_40px_oklch(0.75_0.18_145_/_0.25)] bg-primary/5"
+                : ""
+            }`}
+          >
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-muted-foreground">
+                문제 {currentQuestion?.id}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div key={questionKey} className="animate-fade-in-up">
+                <p className="text-xl md:text-2xl text-foreground leading-relaxed">
+                  {currentQuestion?.question}
+                </p>
+              </div>
 
-            {/* Hint Section */}
-            <div className="space-y-3">
-              {!showHint ? (
-                <Button
-                  variant="outline"
-                  onClick={handleUseHint}
-                  disabled={role !== "player"}
-                  className="w-full h-14 text-lg border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
-                >
-                  <Lightbulb className="w-5 h-5 mr-2" />
-                  힌트 사용하기 (+{HINT_PENALTY_SECONDS}초 패널티)
-                </Button>
-              ) : (
-                <div className="flex items-start gap-4 p-5 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
-                  <Lightbulb className="w-6 h-6 text-accent shrink-0 mt-0.5" />
-                  <p className="text-accent text-lg">{currentQuestion?.hint}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Answer Form — shakes on wrong answer */}
-            {role === "player" ? (
-              <div
-                className={isShaking ? "animate-shake" : ""}
-                onAnimationEnd={() => setIsShaking(false)}
-              >
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <Input
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    placeholder="정답을 입력하세요..."
-                    className="text-xl h-16 bg-input border-border focus:border-primary/60 focus:shadow-[0_0_12px_oklch(0.75_0.18_145_/_0.2)] transition-all duration-300"
-                    autoFocus
-                  />
-
-                  {feedback.type && (
-                    <div className={`flex items-center gap-3 p-4 rounded-lg text-lg animate-fade-in ${
-                      feedback.type === "correct"
-                        ? "bg-primary/10 text-primary border border-primary/20"
-                        : "bg-destructive/10 text-destructive border border-destructive/20"
-                    }`}>
-                      {feedback.type === "correct"
-                        ? <CheckCircle2 className="w-6 h-6" />
-                        : <XCircle className="w-6 h-6" />
-                      }
-                      <span className="font-medium">{feedback.message}</span>
-                    </div>
-                  )}
-
+              {/* Hint */}
+              <div>
+                {!showHint ? (
                   <Button
-                    type="submit"
-                    className="w-full h-16 text-xl bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-40"
-                    disabled={!answer.trim()}
+                    variant="outline"
+                    onClick={handleUseHint}
+                    disabled={!isPlayer}
+                    className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
                   >
-                    제출
+                    <Lightbulb className="w-4 h-4 mr-2" />
+                    힌트 사용하기 (+{HINT_PENALTY_SECONDS}초 패널티)
                   </Button>
-                </form>
+                ) : (
+                  <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
+                    <Lightbulb className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                    <p className="text-accent text-base">{currentQuestion?.hint}</p>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="text-center py-8 bg-secondary/30 rounded-lg border border-border/30">
-                <Eye className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-                <p className="text-xl text-muted-foreground">관전 모드</p>
-                <p className="text-muted-foreground">플레이어가 문제를 풀고 있습니다</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Stats */}
-        <div className="flex justify-center gap-8 text-lg text-muted-foreground animate-fade-in-up" style={{ animationDelay: "0.15s" }}>
-          <span>힌트 사용: {team.hintsUsed}회</span>
-          <span>패널티: +{team.penaltySeconds}초</span>
+            </CardContent>
+          </Card>
+
+          {/* Stats */}
+          <div className="flex justify-center gap-6 text-sm text-muted-foreground pb-2">
+            <span>힌트 {team.hintsUsed}회</span>
+            <span>패널티 +{team.penaltySeconds}초</span>
+          </div>
         </div>
       </div>
+
+      {/* Sticky Answer Form at bottom */}
+      {isPlayer && (
+        <div
+          className="shrink-0 px-4 pt-3 pb-4 border-t border-border/50 bg-background/90 backdrop-blur-sm relative z-20"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          <div className="max-w-3xl mx-auto space-y-3">
+            {feedback.type && (
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm animate-fade-in ${
+                feedback.type === "correct"
+                  ? "bg-primary/10 text-primary border border-primary/20"
+                  : "bg-destructive/10 text-destructive border border-destructive/20"
+              }`}>
+                {feedback.type === "correct"
+                  ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  : <XCircle className="w-4 h-4 shrink-0" />
+                }
+                <span className="font-medium">{feedback.message}</span>
+              </div>
+            )}
+            <div
+              className={isShaking ? "animate-shake" : ""}
+              onAnimationEnd={() => setIsShaking(false)}
+            >
+              <form onSubmit={handleSubmit} className="flex gap-2">
+                <Input
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder="정답 입력..."
+                  className="h-14 text-base bg-input border-border focus:border-primary/60 focus:shadow-[0_0_12px_oklch(0.75_0.18_145_/_0.2)] transition-all duration-300"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                />
+                <Button
+                  type="submit"
+                  className="h-14 px-6 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-40 shrink-0"
+                  disabled={!answer.trim()}
+                >
+                  제출
+                </Button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
