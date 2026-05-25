@@ -389,7 +389,7 @@ export async function getCurrentQuestion(sessionId: string, questionNumber: numb
   return question
 }
 
-// 힌트 사용
+// 힌트 사용 (낙관적 잠금으로 멀티 디바이스 중복 적용 방지)
 export async function useHint(sessionId: string, teamId: number) {
   const supabase = createClient()
 
@@ -402,7 +402,8 @@ export async function useHint(sessionId: string, teamId: number) {
 
   if (!team) return false
 
-  await supabase
+  // WHERE hints_used = 현재값 조건으로 동시 요청 중 하나만 반영됨
+  const { data: updated } = await supabase
     .from("teams")
     .update({
       hints_used: team.hints_used + 1,
@@ -410,8 +411,11 @@ export async function useHint(sessionId: string, teamId: number) {
     })
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
+    .eq("hints_used", team.hints_used)
+    .select("hints_used")
+    .maybeSingle()
 
-  return true
+  return !!updated
 }
 
 // 정답 처리 후 다음 문제로 진행 (또는 탈출 완료)

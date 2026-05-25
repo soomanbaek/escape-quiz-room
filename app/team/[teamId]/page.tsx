@@ -118,6 +118,7 @@ export default function TeamPlayPage() {
   // QR / 사진 상태
   const [qrOpen, setQrOpen] = useState(false)
   const [photoLoading, setPhotoLoading] = useState(false)
+  const [hintLoading, setHintLoading] = useState(false)
   const [photoResult, setPhotoResult] = useState<{ score: number; reason: string; isCorrect: boolean } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -278,7 +279,8 @@ export default function TeamPlayPage() {
 
   // 힌트 사용
   const handleUseHint = useCallback(async () => {
-    if (!hasJoined) return
+    if (!hasJoined || hintLoading) return
+    setHintLoading(true)
     await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -286,7 +288,8 @@ export default function TeamPlayPage() {
     })
     setShowHint(true)
     mutate()
-  }, [teamId, hasJoined, mutate])
+    setHintLoading(false)
+  }, [teamId, hasJoined, mutate, hintLoading])
 
   if (!team) {
     return (
@@ -505,11 +508,13 @@ export default function TeamPlayPage() {
                     <Button
                       variant="outline"
                       onClick={handleUseHint}
-                      disabled={!hasJoined}
-                      className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
+                      disabled={!hasJoined || hintLoading}
+                      className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300 disabled:opacity-50"
                     >
-                      <Lightbulb className="w-4 h-4 mr-2" />
-                      힌트 사용하기 (+{HINT_PENALTY_SECONDS}초 패널티)
+                      {hintLoading
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <Lightbulb className="w-4 h-4 mr-2" />}
+                      {hintLoading ? "처리 중..." : `힌트 사용하기 (+${HINT_PENALTY_SECONDS}초 패널티)`}
                     </Button>
                   ) : (
                     <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
