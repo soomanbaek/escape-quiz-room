@@ -16,22 +16,15 @@ export const metadata: Metadata = {
   title: 'Escape Room - Workshop',
   description: '워크샵용 방탈출 게임. 팀별로 문제를 풀고 가장 빨리 탈출하세요!',
   generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+  openGraph: {
+    title: '방탈출 게임 - Workshop',
+    description: '팀별 문제를 풀고 가장 빨리 탈출하세요!',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '방탈출 게임 - Workshop',
+    description: '팀별 문제를 풀고 가장 빨리 탈출하세요!',
   },
 }
 
