@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getGameState, submitPhotoAnswer } from "@/lib/supabase/game-actions"
+import { getLatestSession, submitPhotoAnswer } from "@/lib/supabase/game-actions"
 import { TOTAL_QUESTIONS } from "@/lib/game-data"
 
 export async function POST(
@@ -14,9 +14,13 @@ export async function POST(
       return NextResponse.json({ error: "이미지가 없습니다." }, { status: 400 })
     }
 
-    const gameState = await getGameState()
+    const session = await getLatestSession()
+    if (!session) {
+      return NextResponse.json({ error: "활성 세션이 없습니다." }, { status: 404 })
+    }
+
     const result = await submitPhotoAnswer(
-      gameState.sessionId,
+      session.id,
       parseInt(teamId),
       image,
       mediaType || "image/jpeg",

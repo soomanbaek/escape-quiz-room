@@ -8,6 +8,36 @@ import { judgePhoto } from "../anthropic/photo-judge"
 // 팀원 접속 활성 판정 시간 (이 시간 내 하트비트가 있으면 접속 중)
 const ACTIVE_WINDOW_MS = 15000
 
+// ─── In-memory cache (Vercel warm instance 재사용 최적화) ─────────────────────
+// 서버리스 환경에서 같은 인스턴스가 여러 요청을 처리할 때 DB 쿼리를 줄여줍니다.
+type SessionRow = { id: string; is_started: boolean; start_time: string | null }
+let _session: SessionRow | null = null
+let _sessionExp = 0
+
+// 세션-문제 캐시: key = `${sessionId}-${questionNumber}`
+const _questionCache = new Map<string, Record<string, unknown>>()
+
+// 팀별 멤버 수 캐시
+let _memberCountsCache: { counts: Record<number, number>; sessionId: string; exp: number } | null = null
+
+function bustSessionCache() {
+  _session = null
+  _sessionExp = 0
+}
+
+function bustAllCaches(sessionId?: string) {
+  bustSessionCache()
+  if (sessionId) {
+    for (const key of _questionCache.keys()) {
+      if (key.startsWith(sessionId + "-")) _questionCache.delete(key)
+    }
+  } else {
+    _questionCache.clear()
+  }
+  _memberCountsCache = null
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Supabase 클라이언트 생성 (서버 사이드용)
 function createClient() {
   return createSupabaseClient(
@@ -16,8 +46,9 @@ function createClient() {
   )
 }
 
-// 세션 ID만 빠르게 조회 (auto-create 없음 — heartbeat/join 전용)
+// 세션 ID만 빠르게 조회 (auto-create 없음 — heartbeat/join 전용, 5s 캐시)
 export async function getLatestSession() {
+  if (_session && Date.now() < _sessionExp) return _session
   const supabase = createClient()
   const { data } = await supabase
     .from("game_sessions")
@@ -25,6 +56,7 @@ export async function getLatestSession() {
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
+  if (data) { _session = data; _sessionExp = Date.now() + 5000 }
   return data
 }
 
@@ -43,12 +75,18 @@ export async function getTeamPageData(teamId: number) {
 
   if (!team) return null
 
-  const { data: question } = await supabase
-    .from("questions")
-    .select("*")
-    .eq("session_id", session.id)
-    .eq("question_number", team.current_question)
-    .single()
+  // 문제는 세션 동안 변하지 않으므로 캐시 활용
+  const qKey = `${session.id}-${team.current_question}`
+  let question = _questionCache.get(qKey) ?? null
+  if (!question) {
+    const { data: q } = await supabase
+      .from("questions")
+      .select("*")
+      .eq("session_id", session.id)
+      .eq("question_number", team.current_question)
+      .single()
+    if (q) { question = q; _questionCache.set(qKey, q) }
+  }
 
   let finishedTeams: { teamId: number; teamName: string; endTime: number | null; penaltySeconds: number }[] | null = null
   if (team.is_finished) {
@@ -80,33 +118,34 @@ export async function getTeamPageData(teamId: number) {
   }
 }
 
-// 현재 활성 게임 세션 가져오기 (없으면 생성)
+// 현재 활성 게임 세션 가져오기 (없으면 생성, 5s 캐시)
 export async function getOrCreateGameSession() {
+  if (_session && Date.now() < _sessionExp) return _session
   const supabase = createClient()
 
-  // 가장 최근 세션 가져오기
   const { data: sessions } = await supabase
     .from("game_sessions")
     .select("id, is_started, start_time, created_at")
     .order("created_at", { ascending: false })
     .limit(1)
-  
+
   if (sessions && sessions.length > 0) {
+    _session = sessions[0]
+    _sessionExp = Date.now() + 5000
     return sessions[0]
   }
-  
-  // 새 세션 생성
+
+  // 새 세션 생성 (최초 1회만 실행됨)
   const { data: newSession, error } = await supabase
     .from("game_sessions")
     .insert({ is_started: false })
     .select()
     .single()
-  
+
   if (error) throw error
-  
-  // 기본 문제 및 팀 생성
+
   await initializeGameData(newSession.id)
-  
+  bustSessionCache()
   return newSession
 }
 
@@ -204,8 +243,11 @@ export async function getGameState() {
   }
 }
 
-// 세션 내 팀별 활성 접속 인원 수 집계
+// 세션 내 팀별 활성 접속 인원 수 집계 (3s 캐시)
 export async function getActiveMemberCounts(sessionId: string): Promise<Record<number, number>> {
+  if (_memberCountsCache && _memberCountsCache.sessionId === sessionId && Date.now() < _memberCountsCache.exp) {
+    return _memberCountsCache.counts
+  }
   const supabase = createClient()
   const since = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString()
 
@@ -219,6 +261,7 @@ export async function getActiveMemberCounts(sessionId: string): Promise<Record<n
   for (const row of data || []) {
     counts[row.team_id] = (counts[row.team_id] || 0) + 1
   }
+  _memberCountsCache = { counts, sessionId, exp: Date.now() + 3000 }
   return counts
 }
 
@@ -274,17 +317,15 @@ export async function heartbeat(sessionId: string, teamId: number, deviceId: str
 // 게임 시작
 export async function startGame() {
   const supabase = createClient()
-  
+
   const session = await getOrCreateGameSession()
   const now = new Date().toISOString()
-  
-  // 세션 업데이트
+
   await supabase
     .from("game_sessions")
     .update({ is_started: true, start_time: now })
     .eq("id", session.id)
-  
-  // 모든 팀 초기화 및 시작 시간 설정
+
   await supabase
     .from("teams")
     .update({
@@ -298,25 +339,25 @@ export async function startGame() {
       player_session_id: null
     })
     .eq("session_id", session.id)
-  
+
+  bustSessionCache()  // is_started 변경됨
   return getGameState()
 }
 
 // 게임 리셋
 export async function resetGame() {
   const supabase = createClient()
-  
-  // 새 세션 생성
+
   const { data: newSession, error } = await supabase
     .from("game_sessions")
     .insert({ is_started: false })
     .select()
     .single()
-  
+
   if (error) throw error
-  
+
   await initializeGameData(newSession.id)
-  
+  bustAllCaches()  // 새 세션 ID, 모든 캐시 무효화
   return getGameState()
 }
 
@@ -458,39 +499,37 @@ export async function submitPhotoAnswer(
     await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
   }
 
-  const updatedTeam = await getTeamState(sessionId, teamId)
-  return { team: updatedTeam, isCorrect, score, reason }
+  return { isCorrect, score, reason }
 }
 
 // 플레이어 등록
 export async function registerPlayer(sessionId: string, teamId: number, playerSessionId: string) {
   const supabase = createClient()
-  
-  const team = await getTeamState(sessionId, teamId)
-  if (!team) return { success: false }
-  
-  // 이미 플레이어가 있고 다른 세션이면 실패
-  if (team.has_player && team.player_session_id !== playerSessionId) {
-    return { success: false, team }
-  }
-  
-  // 같은 세션이면 성공 (재접속)
-  if (team.player_session_id === playerSessionId) {
-    return { success: true, team }
-  }
-  
-  // 새 플레이어 등록
-  await supabase
+
+  const { data: team } = await supabase
     .from("teams")
-    .update({
-      has_player: true,
-      player_session_id: playerSessionId
-    })
+    .select("has_player, player_session_id")
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
-  
-  const updatedTeam = await getTeamState(sessionId, teamId)
-  return { success: true, team: updatedTeam }
+    .single()
+
+  if (!team) return { success: false }
+
+  if (team.has_player && team.player_session_id !== playerSessionId) {
+    return { success: false }
+  }
+
+  if (team.player_session_id === playerSessionId) {
+    return { success: true }
+  }
+
+  await supabase
+    .from("teams")
+    .update({ has_player: true, player_session_id: playerSessionId })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+
+  return { success: true }
 }
 
 // 팀 접속 세션 강제 초기화 (어드민용) - 모든 팀원 접속 해제
