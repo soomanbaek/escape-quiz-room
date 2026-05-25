@@ -394,25 +394,25 @@ export default function TeamPlayPage() {
         <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-primary/8 blur-3xl pointer-events-none" />
         <Card className="w-full max-w-xl border-primary/30 shadow-[0_0_40px_oklch(0.75_0.18_145_/_0.15)] animate-fade-in-up relative z-10">
-          <CardContent className="p-10 text-center space-y-8">
-            <div className="w-28 h-28 mx-auto rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center animate-float">
-              <Trophy className="w-14 h-14 text-primary" />
+          <CardContent className="p-6 sm:p-10 text-center space-y-6">
+            <div className="w-20 h-20 sm:w-28 sm:h-28 mx-auto rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center animate-float">
+              <Trophy className="w-10 h-10 sm:w-14 sm:h-14 text-primary" />
             </div>
             <div>
-              <h2 className="text-4xl font-bold text-primary animate-glow-text mb-3">탈출 성공!</h2>
-              <p className="text-2xl text-foreground">Team {team.teamName}</p>
+              <h2 className="text-3xl sm:text-4xl font-bold text-primary animate-glow-text mb-2">탈출 성공!</h2>
+              <p className="text-xl sm:text-2xl text-foreground">Team {team.teamName}</p>
             </div>
-            <div className="grid grid-cols-2 gap-6 py-4">
-              <div className="bg-secondary/50 rounded-xl p-6 border border-border/50">
-                <div className="text-lg text-muted-foreground mb-2">최종 시간</div>
-                <div className="text-4xl font-mono font-bold text-foreground">{formatTime(totalTime)}</div>
+            <div className="grid grid-cols-2 gap-3 sm:gap-6 py-2">
+              <div className="bg-secondary/50 rounded-xl p-4 sm:p-6 border border-border/50 min-w-0">
+                <div className="text-sm sm:text-lg text-muted-foreground mb-1 sm:mb-2">최종 시간</div>
+                <div className="text-2xl sm:text-4xl font-mono font-bold text-foreground tabular-nums truncate">{formatTime(totalTime)}</div>
               </div>
-              <div className="bg-secondary/50 rounded-xl p-6 border border-border/50">
-                <div className="text-lg text-muted-foreground mb-2">현재 순위</div>
-                <div className="text-4xl font-bold text-accent">{ranking > 0 ? `${ranking}위` : "-"}</div>
+              <div className="bg-secondary/50 rounded-xl p-4 sm:p-6 border border-border/50 min-w-0">
+                <div className="text-sm sm:text-lg text-muted-foreground mb-1 sm:mb-2">현재 순위</div>
+                <div className="text-2xl sm:text-4xl font-bold text-accent">{ranking > 0 ? `${ranking}위` : "-"}</div>
               </div>
             </div>
-            <div className="text-lg text-muted-foreground">
+            <div className="text-sm sm:text-lg text-muted-foreground">
               힌트 사용: {team.hintsUsed}회 (패널티: +{team.penaltySeconds}초)
             </div>
           </CardContent>
