@@ -6,7 +6,7 @@ export interface Question {
   question: string
   // text/qr: 비교할 정답 / photo: Claude가 비교할 목표 설명(서버 전용)
   answer: string
-  hint: string
+  hint?: string
 }
 
 export interface TeamState {
@@ -97,13 +97,11 @@ export const SAMPLE_QUESTIONS: Question[] = [
     type: "qr",
     question: "주변에 숨겨진 QR 코드를 찾아 스캔하세요! 코드 안에 탈출 암호가 들어 있습니다.",
     answer: "UNLOCK",
-    hint: "진행자가 안내한 구역을 살펴보세요. 나무, 벤치, 기둥 뒤편을 확인해보세요."
   },
   {
     id: 9,
     type: "photo",
     question: "📷 미션: '고구마'를 닮은 것을 찾아 사진을 찍어 제출하세요! (보라색이거나 길쭉한 덩이 모양이면 통과)",
     answer: "고구마를 닮은 사물 또는 자연물. 보라색 계열의 색이거나, 길쭉하고 둥근 덩이줄기 형태(고구마, 감자, 돌멩이, 가방, 신발 등)이면 높은 점수를 준다. 색이나 모양 중 하나라도 고구마와 비슷하면 후하게 평가할 것.",
-    hint: "꼭 진짜 고구마가 아니어도 됩니다. 보라색 물건이나 고구마처럼 통통하고 길쭉한 모양이면 충분해요!"
   }
 ]

@@ -499,24 +499,26 @@ export default function TeamPlayPage() {
               </div>
 
               {/* Hint */}
-              <div>
-                {!showHint ? (
-                  <Button
-                    variant="outline"
-                    onClick={handleUseHint}
-                    disabled={!hasJoined}
-                    className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
-                  >
-                    <Lightbulb className="w-4 h-4 mr-2" />
-                    힌트 사용하기 (+{HINT_PENALTY_SECONDS}초 패널티)
-                  </Button>
-                ) : (
-                  <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
-                    <Lightbulb className="w-5 h-5 text-accent shrink-0 mt-0.5" />
-                    <p className="text-accent text-base">{currentQuestion?.hint}</p>
-                  </div>
-                )}
-              </div>
+              {currentQuestion?.hint && (
+                <div>
+                  {!showHint ? (
+                    <Button
+                      variant="outline"
+                      onClick={handleUseHint}
+                      disabled={!hasJoined}
+                      className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
+                    >
+                      <Lightbulb className="w-4 h-4 mr-2" />
+                      힌트 사용하기 (+{HINT_PENALTY_SECONDS}초 패널티)
+                    </Button>
+                  ) : (
+                    <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
+                      <Lightbulb className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                      <p className="text-accent text-base">{currentQuestion.hint}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
