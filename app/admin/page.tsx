@@ -7,7 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS } from "@/lib/game-data"
 import type { TeamState } from "@/lib/game-data"
-import { Play, RotateCcw, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX } from "lucide-react"
+import { Play, RotateCcw, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star } from "lucide-react"
+
+interface MemberStat {
+  deviceId: string
+  nickname: string
+  teamId: number
+  count: number
+  firstAnswerSec: number | null
+  lastAnswerSec: number | null
+}
 
 const ADMIN_PASSWORD = "workshop-admin-fighting"
 
@@ -155,6 +164,10 @@ export default function AdminPage() {
   const { data: gameData, mutate } = useSWR(authed ? "/api/game" : null, fetcher, {
     refreshInterval: 2000,
   })
+  const { data: statsData } = useSWR(authed ? "/api/admin/stats" : null, fetcher, {
+    refreshInterval: 10000,
+  })
+  const memberStats: MemberStat[] = statsData?.stats || []
 
   const [elapsedTime, setElapsedTime] = useState(0)
 
@@ -420,6 +433,110 @@ export default function AdminPage() {
             })}
           </div>
         </div>
+
+        {/* Individual Stats */}
+        {isStarted && memberStats.length > 0 && (
+          <div className="space-y-4 animate-fade-in-up" style={{ animationDelay: "0.6s" }}>
+            <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+              <Star className="w-5 h-5 text-accent" />
+              개인 통계
+            </h2>
+
+            {/* Highlights */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* 가장 많이 푼 사람 */}
+              {memberStats[0] && (
+                <Card className="border-accent/30 bg-accent/5">
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
+                      <Trophy className="w-6 h-6 text-accent" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground mb-0.5">가장 많이 푼 사람</div>
+                      <div className="font-bold text-foreground truncate">{memberStats[0].nickname}</div>
+                      <div className="text-sm text-accent">{memberStats[0].count}문제 정답</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {/* 가장 빠른 사람 (마지막 정답 / 정답 수 → 평균 시간 낮은 사람) */}
+              {(() => {
+                const fastest = [...memberStats]
+                  .filter(s => s.count > 0 && s.lastAnswerSec !== null)
+                  .sort((a, b) => (a.lastAnswerSec! / a.count) - (b.lastAnswerSec! / b.count))[0]
+                if (!fastest) return null
+                const avgSec = Math.round(fastest.lastAnswerSec! / fastest.count)
+                const m = Math.floor(avgSec / 60), s = avgSec % 60
+                return (
+                  <Card className="border-primary/30 bg-primary/5">
+                    <CardContent className="p-4 flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                        <Zap className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground mb-0.5">가장 빠른 사람</div>
+                        <div className="font-bold text-foreground truncate">{fastest.nickname}</div>
+                        <div className="text-sm text-primary">문제당 평균 {m > 0 ? `${m}분 ${s}초` : `${s}초`}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })()}
+            </div>
+
+            {/* Full Table */}
+            <Card className="border-border/50">
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/50 bg-secondary/30">
+                        <th className="text-left p-3 text-muted-foreground font-medium">순위</th>
+                        <th className="text-left p-3 text-muted-foreground font-medium">닉네임</th>
+                        <th className="text-left p-3 text-muted-foreground font-medium">팀</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">정답 수</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">첫 정답</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">마지막 정답</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberStats.map((stat, i) => {
+                        const fmtSec = (sec: number | null) => {
+                          if (sec === null) return "-"
+                          const m = Math.floor(sec / 60), s = sec % 60
+                          return m > 0 ? `${m}분 ${s}초` : `${s}초`
+                        }
+                        const teamName = gameData?.teams?.find((t: TeamState) => t.teamId === stat.teamId)?.teamName || stat.teamId
+                        return (
+                          <tr key={stat.deviceId} className={`border-b border-border/30 transition-colors hover:bg-secondary/20 ${i === 0 ? "bg-accent/5" : ""}`}>
+                            <td className="p-3">
+                              <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                                i === 0 ? "bg-accent text-accent-foreground" :
+                                i === 1 ? "bg-muted-foreground/20 text-foreground" :
+                                i === 2 ? "bg-chart-4/20 text-chart-4" :
+                                "text-muted-foreground"
+                              }`}>
+                                {i + 1}
+                              </span>
+                            </td>
+                            <td className="p-3 font-medium text-foreground">{stat.nickname}</td>
+                            <td className="p-3 text-muted-foreground">Team {teamName}</td>
+                            <td className="p-3 text-center">
+                              <span className="font-bold text-foreground">{stat.count}</span>
+                              <span className="text-muted-foreground text-xs ml-1">개</span>
+                            </td>
+                            <td className="p-3 text-center text-muted-foreground">{fmtSec(stat.firstAnswerSec)}</td>
+                            <td className="p-3 text-center text-muted-foreground">{fmtSec(stat.lastAnswerSec)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Team Access Links */}
         {!isStarted && (

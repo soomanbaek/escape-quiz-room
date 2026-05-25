@@ -76,7 +76,7 @@ export async function POST(
     }
 
     if (action === "submit") {
-      const result = await submitAnswer(session.id, teamIdNum, answer, TOTAL_QUESTIONS)
+      const result = await submitAnswer(session.id, teamIdNum, answer, TOTAL_QUESTIONS, playerSessionId, nickname)
       return NextResponse.json({ isCorrect: result.isCorrect })
     }
 

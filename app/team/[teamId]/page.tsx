@@ -218,7 +218,7 @@ export default function TeamPlayPage() {
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "submit", answer: value })
+      body: JSON.stringify({ action: "submit", answer: value, sessionId, nickname })
     })
     const result = await res.json()
 

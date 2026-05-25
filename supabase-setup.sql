@@ -24,3 +24,19 @@ ALTER TABLE team_members DISABLE ROW LEVEL SECURITY;
 -- 활성 인원 집계 쿼리용 인덱스
 CREATE INDEX IF NOT EXISTS idx_team_members_active
   ON team_members (session_id, team_id, last_seen);
+
+-- 3) 개인별 정답 제출 기록 테이블 (개인 통계용)
+CREATE TABLE IF NOT EXISTS answer_submissions (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      uuid NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+  team_id         int  NOT NULL,
+  device_id       text NOT NULL,
+  nickname        text,
+  question_number int  NOT NULL,
+  submitted_at    timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE answer_submissions DISABLE ROW LEVEL SECURITY;
+
+CREATE INDEX IF NOT EXISTS idx_submissions_session_device
+  ON answer_submissions (session_id, device_id);

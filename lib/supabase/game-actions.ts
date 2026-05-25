@@ -444,8 +444,70 @@ async function advanceTeam(sessionId: string, teamId: number, currentQuestion: n
   }
 }
 
+// 개인별 정답 기록 저장
+async function recordCorrectAnswer(
+  sessionId: string, teamId: number, deviceId: string,
+  nickname: string | null, questionNumber: number
+) {
+  if (!deviceId) return
+  const supabase = createClient()
+  await supabase.from("answer_submissions").insert({
+    session_id: sessionId,
+    team_id: teamId,
+    device_id: deviceId,
+    nickname: nickname || null,
+    question_number: questionNumber,
+  }).then(() => {})  // 테이블 없어도 게임에 영향 없음
+}
+
+// 개인 통계 조회
+export async function getMemberStats(sessionId: string, startTimeMs: number | null) {
+  const supabase = createClient()
+  const { data: submissions } = await supabase
+    .from("answer_submissions")
+    .select("device_id, nickname, team_id, question_number, submitted_at")
+    .eq("session_id", sessionId)
+    .order("submitted_at", { ascending: true })
+
+  if (!submissions?.length) return []
+
+  const map = new Map<string, {
+    nickname: string | null
+    teamId: number
+    count: number
+    firstAt: number
+    lastAt: number
+  }>()
+
+  for (const s of submissions) {
+    const t = new Date(s.submitted_at).getTime()
+    if (!map.has(s.device_id)) {
+      map.set(s.device_id, { nickname: s.nickname, teamId: s.team_id, count: 0, firstAt: t, lastAt: t })
+    }
+    const e = map.get(s.device_id)!
+    e.count++
+    e.lastAt = t
+    if (s.nickname) e.nickname = s.nickname
+  }
+
+  const gameStart = startTimeMs || 0
+  return Array.from(map.entries())
+    .map(([deviceId, e]) => ({
+      deviceId,
+      nickname: e.nickname || `익명-${deviceId.slice(-4)}`,
+      teamId: e.teamId,
+      count: e.count,
+      firstAnswerSec: gameStart ? Math.round((e.firstAt - gameStart) / 1000) : null,
+      lastAnswerSec: gameStart ? Math.round((e.lastAt - gameStart) / 1000) : null,
+    }))
+    .sort((a, b) => b.count - a.count || (a.lastAnswerSec ?? 0) - (b.lastAnswerSec ?? 0))
+}
+
 // 정답 제출 (text / qr)
-export async function submitAnswer(sessionId: string, teamId: number, answer: string, totalQuestions: number) {
+export async function submitAnswer(
+  sessionId: string, teamId: number, answer: string,
+  totalQuestions: number, deviceId?: string, nickname?: string
+) {
   const supabase = createClient()
 
   const { data: team } = await supabase
@@ -469,7 +531,10 @@ export async function submitAnswer(sessionId: string, teamId: number, answer: st
   const isCorrect = answer.toLowerCase().trim() === question.answer.toLowerCase().trim()
 
   if (isCorrect) {
-    await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
+    await Promise.all([
+      advanceTeam(sessionId, teamId, team.current_question, totalQuestions),
+      recordCorrectAnswer(sessionId, teamId, deviceId || "", nickname || null, team.current_question),
+    ])
   }
 
   return { isCorrect }
