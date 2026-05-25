@@ -341,17 +341,17 @@ export default function AdminPage() {
                             ) : (
                               <span className="text-lg font-semibold text-foreground">Team {team.teamName}</span>
                             )}
-                            {team.hasPlayer && (
+                            {(team.memberCount ?? 0) > 0 && (
                               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full border border-primary/20">
                                 <span className="w-1.5 h-1.5 rounded-full bg-primary animate-live-dot" />
                                 <Gamepad2 className="w-3 h-3" />
-                                플레이어 접속
+                                {team.memberCount}명 접속
                               </span>
                             )}
-                            {team.hasPlayer && sessionId && (
+                            {(team.memberCount ?? 0) > 0 && sessionId && (
                               <button
                                 onClick={async () => {
-                                  if (!confirm(`Team ${team.teamName}의 플레이어 세션을 초기화하시겠습니까?`)) return
+                                  if (!confirm(`Team ${team.teamName}의 모든 접속을 초기화하시겠습니까?`)) return
                                   await fetch("/api/game", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -359,7 +359,7 @@ export default function AdminPage() {
                                   })
                                   mutate()
                                 }}
-                                title="플레이어 세션 초기화"
+                                title="팀 접속 초기화"
                                 className="inline-flex items-center gap-1 px-2 py-0.5 bg-destructive/10 text-destructive text-xs rounded-full border border-destructive/20 hover:bg-destructive/20 transition-colors"
                               >
                                 <UserX className="w-3 h-3" />

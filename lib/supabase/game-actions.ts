@@ -2,7 +2,11 @@
 
 // Supabase 게임 액션 - DB 연동
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
-import { SAMPLE_QUESTIONS, TEAM_NAMES } from "../game-data"
+import { SAMPLE_QUESTIONS, TEAM_NAMES, PHOTO_PASS_THRESHOLD } from "../game-data"
+import { judgePhoto } from "../anthropic/photo-judge"
+
+// 팀원 접속 활성 판정 시간 (이 시간 내 하트비트가 있으면 접속 중)
+const ACTIVE_WINDOW_MS = 15000
 
 // Supabase 클라이언트 생성 (서버 사이드용)
 function createClient() {
@@ -50,6 +54,7 @@ async function initializeGameData(sessionId: string) {
   const questionsToInsert = SAMPLE_QUESTIONS.map(q => ({
     session_id: sessionId,
     question_number: q.id,
+    type: q.type,
     question: q.question,
     hint: q.hint,
     answer: q.answer
@@ -110,13 +115,78 @@ export async function getGameState() {
     .select("*")
     .eq("session_id", session.id)
     .order("team_id", { ascending: true })
-  
+
+  const memberCounts = await getActiveMemberCounts(session.id)
+
   return {
     sessionId: session.id,
     isStarted: session.is_started,
     startTime: session.start_time ? new Date(session.start_time).getTime() : null,
-    teams: (teams || []).map(transformTeam)
+    teams: (teams || []).map(t => ({
+      ...transformTeam(t),
+      memberCount: memberCounts[t.team_id] || 0
+    }))
   }
+}
+
+// 세션 내 팀별 활성 접속 인원 수 집계
+export async function getActiveMemberCounts(sessionId: string): Promise<Record<number, number>> {
+  const supabase = createClient()
+  const since = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString()
+
+  const { data } = await supabase
+    .from("team_members")
+    .select("team_id")
+    .eq("session_id", sessionId)
+    .gte("last_seen", since)
+
+  const counts: Record<number, number> = {}
+  for (const row of data || []) {
+    counts[row.team_id] = (counts[row.team_id] || 0) + 1
+  }
+  return counts
+}
+
+// 특정 팀의 활성 접속 인원 수
+export async function getActiveMemberCount(sessionId: string, teamId: number): Promise<number> {
+  const counts = await getActiveMemberCounts(sessionId)
+  return counts[teamId] || 0
+}
+
+// 팀 입장 (멀티 디바이스 - 누구나 입장 가능)
+export async function joinTeam(sessionId: string, teamId: number, deviceId: string, nickname: string) {
+  const supabase = createClient()
+  if (!deviceId) return { success: false }
+
+  await supabase
+    .from("team_members")
+    .upsert(
+      {
+        session_id: sessionId,
+        team_id: teamId,
+        device_id: deviceId,
+        nickname: nickname?.trim() || null,
+        last_seen: new Date().toISOString(),
+      },
+      { onConflict: "session_id,team_id,device_id" }
+    )
+
+  return { success: true }
+}
+
+// 하트비트 (접속 유지)
+export async function heartbeat(sessionId: string, teamId: number, deviceId: string) {
+  const supabase = createClient()
+  if (!deviceId) return false
+
+  await supabase
+    .from("team_members")
+    .update({ last_seen: new Date().toISOString() })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .eq("device_id", deviceId)
+
+  return true
 }
 
 // 게임 시작
@@ -215,43 +285,80 @@ export async function useHint(sessionId: string, teamId: number) {
   return getTeamState(sessionId, teamId)
 }
 
-// 정답 제출
-export async function submitAnswer(sessionId: string, teamId: number, answer: string, totalQuestions: number) {
+// 정답 처리 후 다음 문제로 진행 (또는 탈출 완료)
+async function advanceTeam(sessionId: string, teamId: number, currentQuestion: number, totalQuestions: number) {
   const supabase = createClient()
-  
+
+  if (currentQuestion >= totalQuestions) {
+    // 탈출 완료
+    await supabase
+      .from("teams")
+      .update({
+        is_finished: true,
+        end_time: new Date().toISOString()
+      })
+      .eq("session_id", sessionId)
+      .eq("team_id", teamId)
+  } else {
+    // 다음 문제로
+    await supabase
+      .from("teams")
+      .update({
+        current_question: currentQuestion + 1
+      })
+      .eq("session_id", sessionId)
+      .eq("team_id", teamId)
+  }
+}
+
+// 정답 제출 (text / qr)
+export async function submitAnswer(sessionId: string, teamId: number, answer: string, totalQuestions: number) {
   const team = await getTeamState(sessionId, teamId)
   if (!team || team.is_finished) return { team, isCorrect: false }
-  
+
   const question = await getCurrentQuestion(sessionId, team.current_question)
   if (!question) return { team, isCorrect: false }
-  
+
   const isCorrect = answer.toLowerCase().trim() === question.answer.toLowerCase().trim()
-  
+
   if (isCorrect) {
-    if (team.current_question >= totalQuestions) {
-      // 탈출 완료
-      await supabase
-        .from("teams")
-        .update({
-          is_finished: true,
-          end_time: new Date().toISOString()
-        })
-        .eq("session_id", sessionId)
-        .eq("team_id", teamId)
-    } else {
-      // 다음 문제로
-      await supabase
-        .from("teams")
-        .update({
-          current_question: team.current_question + 1
-        })
-        .eq("session_id", sessionId)
-        .eq("team_id", teamId)
-    }
+    await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
   }
-  
+
   const updatedTeam = await getTeamState(sessionId, teamId)
   return { team: updatedTeam, isCorrect }
+}
+
+// 사진 미션 제출 (Claude 비전 채점)
+export async function submitPhotoAnswer(
+  sessionId: string,
+  teamId: number,
+  imageBase64: string,
+  mediaType: string,
+  totalQuestions: number
+) {
+  const team = await getTeamState(sessionId, teamId)
+  if (!team || team.is_finished) {
+    return { team, isCorrect: false, score: 0, reason: "이미 완료된 팀입니다." }
+  }
+
+  const question = await getCurrentQuestion(sessionId, team.current_question)
+  if (!question) {
+    return { team, isCorrect: false, score: 0, reason: "문제를 찾을 수 없습니다." }
+  }
+  if (question.type !== "photo") {
+    return { team, isCorrect: false, score: 0, reason: "사진 문제가 아닙니다." }
+  }
+
+  const { score, reason } = await judgePhoto(question.answer, imageBase64, mediaType)
+  const isCorrect = score >= PHOTO_PASS_THRESHOLD
+
+  if (isCorrect) {
+    await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
+  }
+
+  const updatedTeam = await getTeamState(sessionId, teamId)
+  return { team: updatedTeam, isCorrect, score, reason }
 }
 
 // 플레이어 등록
@@ -285,9 +392,15 @@ export async function registerPlayer(sessionId: string, teamId: number, playerSe
   return { success: true, team: updatedTeam }
 }
 
-// 팀 플레이어 세션 강제 초기화 (어드민용)
+// 팀 접속 세션 강제 초기화 (어드민용) - 모든 팀원 접속 해제
 export async function resetTeamPlayer(sessionId: string, teamId: number) {
   const supabase = createClient()
+
+  await supabase
+    .from("team_members")
+    .delete()
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
 
   await supabase
     .from("teams")

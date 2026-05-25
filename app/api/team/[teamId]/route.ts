@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server"
-import { 
-  getTeamState, 
-  getCurrentQuestion, 
-  useHint, 
-  submitAnswer, 
-  registerPlayer, 
+import {
+  getTeamState,
+  getCurrentQuestion,
+  useHint,
+  submitAnswer,
+  registerPlayer,
   unregisterPlayer,
-  getGameState
+  getGameState,
+  joinTeam,
+  heartbeat,
+  getActiveMemberCount
 } from "@/lib/supabase/game-actions"
 import { TOTAL_QUESTIONS } from "@/lib/game-data"
 
@@ -24,7 +27,8 @@ export async function GET(
     }
     
     const currentQuestion = await getCurrentQuestion(gameState.sessionId, team.current_question)
-    
+    const memberCount = await getActiveMemberCount(gameState.sessionId, parseInt(teamId))
+
     return NextResponse.json({
       team: {
         ...team,
@@ -38,10 +42,12 @@ export async function GET(
         endTime: team.end_time ? new Date(team.end_time).getTime() : null,
         isFinished: team.is_finished,
         hasPlayer: team.has_player,
-        playerSessionId: team.player_session_id
+        playerSessionId: team.player_session_id,
+        memberCount
       },
       currentQuestion: currentQuestion ? {
         id: currentQuestion.question_number,
+        type: currentQuestion.type || "text",
         question: currentQuestion.question,
         hint: currentQuestion.hint
       } : null,
@@ -61,11 +67,23 @@ export async function POST(
   try {
     const { teamId } = await params
     const body = await request.json()
-    const { action, answer, sessionId: playerSessionId } = body
+    const { action, answer, sessionId: playerSessionId, nickname } = body
     const teamIdNum = parseInt(teamId)
-    
+
     const gameState = await getGameState()
-    
+
+    // 팀 입장 (멀티 디바이스)
+    if (action === "join") {
+      const result = await joinTeam(gameState.sessionId, teamIdNum, playerSessionId || "", nickname || "")
+      return NextResponse.json(result)
+    }
+
+    // 하트비트 (접속 유지)
+    if (action === "heartbeat") {
+      await heartbeat(gameState.sessionId, teamIdNum, playerSessionId || "")
+      return NextResponse.json({ ok: true })
+    }
+
     if (action === "hint") {
       const team = await useHint(gameState.sessionId, teamIdNum)
       return NextResponse.json({ 

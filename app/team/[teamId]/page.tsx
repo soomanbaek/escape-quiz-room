@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users } from "lucide-react"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users, QrCode, Camera, X, Loader2 } from "lucide-react"
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -22,13 +22,89 @@ function generateSessionId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36)
 }
 
+// 사진을 최대 1024px로 축소하고 JPEG base64로 변환
+async function fileToResizedBase64(file: File, maxDim = 1024, quality = 0.8): Promise<{ data: string; mediaType: string }> {
+  const bitmap = await createImageBitmap(file)
+  let width = bitmap.width
+  let height = bitmap.height
+  if (width > maxDim || height > maxDim) {
+    if (width >= height) {
+      height = Math.round((height * maxDim) / width)
+      width = maxDim
+    } else {
+      width = Math.round((width * maxDim) / height)
+      height = maxDim
+    }
+  }
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext("2d")!
+  ctx.drawImage(bitmap, 0, 0, width, height)
+  const dataUrl = canvas.toDataURL("image/jpeg", quality)
+  return { data: dataUrl.split(",")[1], mediaType: "image/jpeg" }
+}
+
+// QR 스캐너 모달
+function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; onClose: () => void }) {
+  const scannerRef = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null)
+  const lockRef = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    import("html5-qrcode").then(({ Html5Qrcode }) => {
+      if (cancelled) return
+      const scanner = new Html5Qrcode("qr-reader")
+      scannerRef.current = scanner
+      scanner
+        .start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (decodedText: string) => {
+            if (lockRef.current) return
+            lockRef.current = true
+            onResult(decodedText)
+          },
+          () => {}
+        )
+        .catch(() => {})
+    })
+    return () => {
+      cancelled = true
+      const s = scannerRef.current
+      if (s) {
+        s.stop().then(() => s.clear()).catch(() => {})
+        scannerRef.current = null
+      }
+    }
+  }, [onResult])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 animate-fade-in">
+      <div className="w-full max-w-sm bg-card rounded-xl border border-border p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-foreground flex items-center gap-2">
+            <QrCode className="w-5 h-5 text-primary" />
+            QR 코드 스캔
+          </h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div id="qr-reader" className="w-full rounded-lg overflow-hidden bg-black" />
+        <p className="text-sm text-muted-foreground text-center">QR 코드를 카메라에 비춰주세요</p>
+      </div>
+    </div>
+  )
+}
+
 export default function TeamPlayPage() {
   const params = useParams()
   const teamId = params.teamId as string
 
-  const [isPlayer, setIsPlayer] = useState(false)
+  const [hasJoined, setHasJoined] = useState(false)
   const [sessionId, setSessionId] = useState<string>("")
-  const [playerError, setPlayerError] = useState<string>("")
+  const [nickname, setNickname] = useState<string>("")
 
   const { data, mutate } = useSWR(`/api/team/${teamId}`, fetcher, {
     refreshInterval: 500
@@ -42,6 +118,12 @@ export default function TeamPlayPage() {
   const [feedback, setFeedback] = useState<{ type: "correct" | "incorrect" | null; message: string }>({ type: null, message: "" })
   const [elapsedTime, setElapsedTime] = useState(0)
 
+  // QR / 사진 상태
+  const [qrOpen, setQrOpen] = useState(false)
+  const [photoLoading, setPhotoLoading] = useState(false)
+  const [photoResult, setPhotoResult] = useState<{ score: number; reason: string; isCorrect: boolean } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   // Animation states
   const [isShaking, setIsShaking] = useState(false)
   const [isFlashing, setIsFlashing] = useState(false)
@@ -50,10 +132,11 @@ export default function TeamPlayPage() {
 
   const team = data?.team
   const currentQuestion = data?.currentQuestion
+  const questionType: "text" | "qr" | "photo" = currentQuestion?.type || "text"
   const isGameStarted = gameData?.isStarted
   const gameStartTime = gameData?.startTime
 
-  // 세션 ID 초기화
+  // 세션(디바이스) ID 초기화
   useEffect(() => {
     const stored = sessionStorage.getItem(`team-${teamId}-session`)
     if (stored) {
@@ -65,6 +148,37 @@ export default function TeamPlayPage() {
     }
   }, [teamId])
 
+  // 새로고침 시 이미 입장했던 디바이스면 자동 재입장
+  useEffect(() => {
+    if (!sessionId) return
+    const joined = sessionStorage.getItem(`team-${teamId}-joined`) === "1"
+    if (joined) {
+      const nick = sessionStorage.getItem(`team-${teamId}-nick`) || ""
+      setNickname(nick)
+      setHasJoined(true)
+      fetch(`/api/team/${teamId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "join", sessionId, nickname: nick })
+      }).catch(() => {})
+    }
+  }, [sessionId, teamId])
+
+  // 하트비트 (접속 유지)
+  useEffect(() => {
+    if (!hasJoined || !sessionId) return
+    const send = () => {
+      fetch(`/api/team/${teamId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "heartbeat", sessionId })
+      }).catch(() => {})
+    }
+    send()
+    const interval = setInterval(send, 5000)
+    return () => clearInterval(interval)
+  }, [hasJoined, sessionId, teamId])
+
   // 타이머
   useEffect(() => {
     if (!isGameStarted || !gameStartTime || team?.isFinished) return
@@ -74,49 +188,39 @@ export default function TeamPlayPage() {
     return () => clearInterval(interval)
   }, [isGameStarted, gameStartTime, team?.isFinished])
 
-  // 문제 변경 감지 → 질문 카드 fade-in 트리거
+  // 문제 변경 감지 → 카드 애니메이션 + 입력 상태 초기화
   useEffect(() => {
     const q = team?.currentQuestion
     if (q === undefined) return
     if (lastQuestionRef.current !== null && lastQuestionRef.current !== q) {
       setQuestionKey(k => k + 1)
+      setShowHint(false)
+      setPhotoResult(null)
+      setAnswer("")
     }
     lastQuestionRef.current = q
   }, [team?.currentQuestion])
 
-  // 새로고침 시 세션 ID가 일치하면 자동 재접속
-  useEffect(() => {
-    if (sessionId && team?.playerSessionId && team.playerSessionId === sessionId) {
-      setIsPlayer(true)
-    }
-  }, [sessionId, team?.playerSessionId])
-
-  // 플레이어로 등록
-  const handleRegister = useCallback(async () => {
+  // 팀 입장
+  const handleJoin = useCallback(async () => {
     if (!sessionId) return
-    const res = await fetch(`/api/team/${teamId}`, {
+    await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "register", sessionId })
+      body: JSON.stringify({ action: "join", sessionId, nickname })
     })
-    const result = await res.json()
-    if (result.success) {
-      setIsPlayer(true)
-      setPlayerError("")
-    } else {
-      setPlayerError("이미 다른 플레이어가 접속 중입니다.")
-    }
-  }, [teamId, sessionId])
+    sessionStorage.setItem(`team-${teamId}-joined`, "1")
+    sessionStorage.setItem(`team-${teamId}-nick`, nickname)
+    setHasJoined(true)
+  }, [teamId, sessionId, nickname])
 
-  // 정답 제출
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!answer.trim() || !isPlayer) return
-
+  // 정답 제출 (text / qr 공용)
+  const submitValue = useCallback(async (value: string) => {
+    if (!value.trim() || !hasJoined) return
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "submit", answer })
+      body: JSON.stringify({ action: "submit", answer: value })
     })
     const result = await res.json()
 
@@ -134,13 +238,50 @@ export default function TeamPlayPage() {
       setFeedback({ type: "incorrect", message: "오답입니다. 다시 시도해주세요." })
       setTimeout(() => setFeedback({ type: null, message: "" }), 2000)
     }
-
     mutate()
-  }, [answer, teamId, isPlayer, mutate])
+  }, [teamId, hasJoined, mutate])
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault()
+    submitValue(answer)
+  }, [answer, submitValue])
+
+  const handleQrResult = useCallback((text: string) => {
+    setQrOpen(false)
+    submitValue(text)
+  }, [submitValue])
+
+  // 사진 제출 (Claude 채점)
+  const handlePhotoChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file || !hasJoined) return
+    setPhotoLoading(true)
+    setPhotoResult(null)
+    try {
+      const { data: imgData, mediaType } = await fileToResizedBase64(file)
+      const res = await fetch(`/api/team/${teamId}/photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: imgData, mediaType })
+      })
+      const result = await res.json()
+      setPhotoResult({ score: result.score ?? 0, reason: result.reason ?? "", isCorrect: !!result.isCorrect })
+      if (result.isCorrect) {
+        setIsFlashing(true)
+        setTimeout(() => setIsFlashing(false), 1500)
+      }
+      mutate()
+    } catch {
+      setPhotoResult({ score: 0, reason: "사진 처리 중 오류가 발생했습니다.", isCorrect: false })
+    } finally {
+      setPhotoLoading(false)
+    }
+  }, [teamId, hasJoined, mutate])
 
   // 힌트 사용
   const handleUseHint = useCallback(async () => {
-    if (!isPlayer) return
+    if (!hasJoined) return
     await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -148,7 +289,7 @@ export default function TeamPlayPage() {
     })
     setShowHint(true)
     mutate()
-  }, [teamId, isPlayer, mutate])
+  }, [teamId, hasJoined, mutate])
 
   if (!team) {
     return (
@@ -166,8 +307,10 @@ export default function TeamPlayPage() {
     ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
     : elapsedTime + (team.penaltySeconds * 1000)
 
-  // 입장 화면
-  if (!isPlayer) {
+  const memberCount = team.memberCount || 0
+
+  // 입장 화면 (멀티 디바이스 - 누구나 입장)
+  if (!hasJoined) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
@@ -178,26 +321,32 @@ export default function TeamPlayPage() {
               <Users className="w-10 h-10 text-primary" />
             </div>
             <CardTitle className="text-3xl font-bold">Team {team.teamName}</CardTitle>
+            {memberCount > 0 && (
+              <p className="text-sm text-primary mt-2 flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-live-dot" />
+                {memberCount}명 참여 중
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
+            <Input
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+              placeholder="닉네임 (선택)"
+              maxLength={12}
+              className="h-12 text-center bg-input border-border focus:border-primary/60"
+            />
             <Button
-              onClick={handleRegister}
+              onClick={handleJoin}
               className="w-full h-16 text-xl bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
-              disabled={team.hasPlayer}
             >
               <Gamepad2 className="w-6 h-6 mr-3" />
               입장하기
             </Button>
-            {playerError && (
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-center text-sm font-medium animate-fade-in">
-                {playerError}
-              </div>
-            )}
-            {team.hasPlayer && !playerError && (
-              <p className="text-center text-sm text-muted-foreground animate-fade-in">
-                이미 다른 플레이어가 접속 중입니다.
-              </p>
-            )}
+            <p className="text-center text-sm text-muted-foreground">
+              팀원 모두 각자 폰으로 입장해 함께 풀 수 있어요
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -217,8 +366,8 @@ export default function TeamPlayPage() {
             <div>
               <h2 className="text-3xl font-bold text-foreground mb-2">Team {team.teamName}</h2>
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary text-lg">
-                <Gamepad2 className="w-5 h-5 text-primary" />
-                <span>플레이어</span>
+                <Users className="w-5 h-5 text-primary" />
+                <span>{memberCount}명 참여 중</span>
               </div>
             </div>
             <p className="text-xl text-muted-foreground">게임 시작을 기다리는 중...</p>
@@ -280,6 +429,8 @@ export default function TeamPlayPage() {
     <div className="h-dvh bg-background flex flex-col relative overflow-hidden">
       <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
 
+      {qrOpen && <QrScanner onResult={handleQrResult} onClose={() => setQrOpen(false)} />}
+
       {/* Sticky Header */}
       <div className="shrink-0 px-4 pt-4 pb-3 border-b border-border/50 bg-background/80 backdrop-blur-sm relative z-20 animate-fade-in-up" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
@@ -287,8 +438,8 @@ export default function TeamPlayPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-foreground truncate">Team {team.teamName}</h1>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-primary/20 text-primary border border-primary/30">
-                <Gamepad2 className="w-3 h-3" />
-                플레이어
+                <Users className="w-3 h-3" />
+                {memberCount}명
               </span>
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -329,13 +480,23 @@ export default function TeamPlayPage() {
             }`}
           >
             <CardHeader className="pb-3">
-              <CardTitle className="text-base text-muted-foreground">
+              <CardTitle className="text-base text-muted-foreground flex items-center gap-2">
                 문제 {currentQuestion?.id}
+                {questionType === "qr" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-chart-3/20 text-chart-3 border border-chart-3/30">
+                    <QrCode className="w-3 h-3" /> QR
+                  </span>
+                )}
+                {questionType === "photo" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-accent/20 text-accent border border-accent/30">
+                    <Camera className="w-3 h-3" /> 사진 미션
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               <div key={questionKey} className="animate-fade-in-up">
-                <p className="text-xl md:text-2xl text-foreground leading-relaxed">
+                <p className="text-xl md:text-2xl text-foreground leading-relaxed whitespace-pre-line">
                   {currentQuestion?.question}
                 </p>
               </div>
@@ -346,7 +507,7 @@ export default function TeamPlayPage() {
                   <Button
                     variant="outline"
                     onClick={handleUseHint}
-                    disabled={!isPlayer}
+                    disabled={!hasJoined}
                     className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300"
                   >
                     <Lightbulb className="w-4 h-4 mr-2" />
@@ -359,7 +520,6 @@ export default function TeamPlayPage() {
                   </div>
                 )}
               </div>
-
             </CardContent>
           </Card>
 
@@ -371,26 +531,102 @@ export default function TeamPlayPage() {
         </div>
       </div>
 
-      {/* Sticky Answer Form at bottom */}
-      {isPlayer && (
-        <div
-          className="shrink-0 px-4 pt-3 pb-4 border-t border-border/50 bg-background/90 backdrop-blur-sm relative z-20"
-          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-        >
-          <div className="max-w-3xl mx-auto space-y-3">
-            {feedback.type && (
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm animate-fade-in ${
-                feedback.type === "correct"
-                  ? "bg-primary/10 text-primary border border-primary/20"
-                  : "bg-destructive/10 text-destructive border border-destructive/20"
-              }`}>
-                {feedback.type === "correct"
-                  ? <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  : <XCircle className="w-4 h-4 shrink-0" />
-                }
-                <span className="font-medium">{feedback.message}</span>
+      {/* Sticky Answer Area at bottom */}
+      <div
+        className="shrink-0 px-4 pt-3 pb-4 border-t border-border/50 bg-background/90 backdrop-blur-sm relative z-20"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="max-w-3xl mx-auto space-y-3">
+          {/* 텍스트/QR 정답 피드백 */}
+          {feedback.type && (
+            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm animate-fade-in ${
+              feedback.type === "correct"
+                ? "bg-primary/10 text-primary border border-primary/20"
+                : "bg-destructive/10 text-destructive border border-destructive/20"
+            }`}>
+              {feedback.type === "correct"
+                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                : <XCircle className="w-4 h-4 shrink-0" />
+              }
+              <span className="font-medium">{feedback.message}</span>
+            </div>
+          )}
+
+          {/* 사진 채점 결과 */}
+          {photoResult && (
+            <div className={`px-4 py-3 rounded-lg animate-fade-in ${
+              photoResult.isCorrect
+                ? "bg-primary/10 border border-primary/20"
+                : "bg-destructive/10 border border-destructive/20"
+            }`}>
+              <div className={`font-bold ${photoResult.isCorrect ? "text-primary" : "text-destructive"}`}>
+                {photoResult.score}% 일치 {photoResult.isCorrect ? "🎉 통과!" : "— 다시 도전!"}
               </div>
-            )}
+              {photoResult.reason && (
+                <div className="text-sm text-muted-foreground mt-1">{photoResult.reason}</div>
+              )}
+            </div>
+          )}
+
+          {/* 입력 컨트롤 (문제 유형별) */}
+          {questionType === "photo" ? (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handlePhotoChange}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={photoLoading}
+                className="w-full h-14 text-base bg-accent hover:bg-accent/90 text-accent-foreground hover:shadow-[0_0_20px_oklch(0.85_0.2_85_/_0.4)] transition-all duration-300 disabled:opacity-60"
+              >
+                {photoLoading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    AI가 채점 중...
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-5 h-5 mr-2" />
+                    사진 촬영하기
+                  </>
+                )}
+              </Button>
+            </>
+          ) : questionType === "qr" ? (
+            <>
+              <Button
+                onClick={() => setQrOpen(true)}
+                className="w-full h-14 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
+              >
+                <QrCode className="w-5 h-5 mr-2" />
+                QR 코드 스캔하기
+              </Button>
+              <div
+                className={isShaking ? "animate-shake" : ""}
+                onAnimationEnd={() => setIsShaking(false)}
+              >
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                  <Input
+                    value={answer}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    placeholder="또는 코드 직접 입력..."
+                    className="h-12 text-base bg-input border-border focus:border-primary/60"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                  />
+                  <Button type="submit" className="h-12 px-5 shrink-0" disabled={!answer.trim()}>
+                    제출
+                  </Button>
+                </form>
+              </div>
+            </>
+          ) : (
             <div
               className={isShaking ? "animate-shake" : ""}
               onAnimationEnd={() => setIsShaking(false)}
@@ -414,9 +650,9 @@ export default function TeamPlayPage() {
                 </Button>
               </form>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
