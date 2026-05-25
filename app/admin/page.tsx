@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS } from "@/lib/game-data"
 import type { TeamState } from "@/lib/game-data"
-import { Play, RotateCcw, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star } from "lucide-react"
+import { Play, RotateCcw, Square, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star } from "lucide-react"
 
 interface MemberStat {
   deviceId: string
@@ -202,6 +202,17 @@ export default function AdminPage() {
     mutate()
   }
 
+  const handleEnd = async () => {
+    if (confirm("게임을 종료하시겠습니까? 진행 데이터와 통계는 유지됩니다.")) {
+      await fetch("/api/game", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "end" }),
+      })
+      mutate()
+    }
+  }
+
   const handleReset = async () => {
     if (confirm("게임을 초기화하시겠습니까? 모든 진행 상황이 리셋됩니다.")) {
       await fetch("/api/game", {
@@ -255,7 +266,7 @@ export default function AdminPage() {
               </div>
             )}
             <div className="flex gap-2">
-              {!isStarted ? (
+              {!isStarted && !startTime ? (
                 <Button
                   onClick={handleStart}
                   size="lg"
@@ -264,6 +275,27 @@ export default function AdminPage() {
                   <Play className="w-5 h-5 mr-2" />
                   게임 시작
                 </Button>
+              ) : isStarted ? (
+                <>
+                  <Button
+                    onClick={handleEnd}
+                    variant="outline"
+                    size="lg"
+                    className="border-muted-foreground/50 text-muted-foreground hover:bg-secondary hover:text-foreground transition-all duration-300"
+                  >
+                    <Square className="w-5 h-5 mr-2" />
+                    게임 종료
+                  </Button>
+                  <Button
+                    onClick={handleReset}
+                    variant="outline"
+                    size="lg"
+                    className="border-destructive text-destructive hover:bg-destructive/10 transition-all duration-300"
+                  >
+                    <RotateCcw className="w-5 h-5 mr-2" />
+                    초기화
+                  </Button>
+                </>
               ) : (
                 <Button
                   onClick={handleReset}

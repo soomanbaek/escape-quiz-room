@@ -353,6 +353,29 @@ export default function TeamPlayPage() {
     )
   }
 
+  // 게임 종료 화면
+  if (!isGameStarted && gameStartTime) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
+        <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
+        <Card className="w-full max-w-lg border-border/50 animate-fade-in-up relative z-10">
+          <CardContent className="p-8 text-center space-y-6">
+            <div className="w-24 h-24 mx-auto rounded-full bg-secondary flex items-center justify-center">
+              <Trophy className="w-12 h-12 text-muted-foreground" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold text-foreground mb-2">Team {team.teamName}</h2>
+              <p className="text-xl text-muted-foreground">게임이 종료되었습니다</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              참여해주셔서 감사합니다!
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   // 게임 시작 대기 화면
   if (!isGameStarted) {
     return (

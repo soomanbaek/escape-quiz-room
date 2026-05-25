@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 // Game API - Supabase 연동
-import { getGameState, startGame, resetGame, updateTeamName, resetTeamPlayer } from "@/lib/supabase/game-actions"
+import { getGameState, startGame, endGame, resetGame, updateTeamName, resetTeamPlayer } from "@/lib/supabase/game-actions"
 
 export async function GET() {
   try {
@@ -19,6 +19,9 @@ export async function POST(request: Request) {
 
     if (action === "start") {
       const gameState = await startGame()
+      return NextResponse.json(gameState)
+    } else if (action === "end") {
+      const gameState = await endGame()
       return NextResponse.json(gameState)
     } else if (action === "reset") {
       const gameState = await resetGame()

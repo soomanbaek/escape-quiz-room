@@ -344,6 +344,18 @@ export async function startGame() {
   return getGameState()
 }
 
+// 게임 종료 (세션/데이터 유지, is_started만 false로)
+export async function endGame() {
+  const supabase = createClient()
+  const session = await getOrCreateGameSession()
+  await supabase
+    .from("game_sessions")
+    .update({ is_started: false })
+    .eq("id", session.id)
+  bustSessionCache()
+  return getGameState()
+}
+
 // 게임 리셋
 export async function resetGame() {
   const supabase = createClient()
