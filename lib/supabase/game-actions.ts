@@ -45,7 +45,7 @@ export async function getTeamPageData(teamId: number) {
 
   const { data: question } = await supabase
     .from("questions")
-    .select("question_number, type, question, hint")
+    .select("*")
     .eq("session_id", session.id)
     .eq("question_number", team.current_question)
     .single()
@@ -114,7 +114,7 @@ export async function getOrCreateGameSession() {
 async function initializeGameData(sessionId: string) {
   const supabase = createClient()
   
-  // 샘플 문제 추가
+  // 샘플 문제 추가 (type 컬럼이 없는 환경에도 대응)
   const questionsToInsert = SAMPLE_QUESTIONS.map(q => ({
     session_id: sessionId,
     question_number: q.id,
@@ -123,8 +123,19 @@ async function initializeGameData(sessionId: string) {
     hint: q.hint,
     answer: q.answer
   }))
-  
-  await supabase.from("questions").insert(questionsToInsert)
+
+  const { error: insertError } = await supabase.from("questions").insert(questionsToInsert)
+  if (insertError) {
+    // type 컬럼 없는 경우 fallback: type 제외하고 재시도
+    const questionsWithoutType = SAMPLE_QUESTIONS.map(q => ({
+      session_id: sessionId,
+      question_number: q.id,
+      question: q.question,
+      hint: q.hint,
+      answer: q.answer
+    }))
+    await supabase.from("questions").insert(questionsWithoutType)
+  }
   
   // 6개 팀 생성
   const teamsToInsert = TEAM_NAMES.map((name, index) => ({
