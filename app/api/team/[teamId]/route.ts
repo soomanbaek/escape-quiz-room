@@ -71,16 +71,13 @@ export async function POST(
     if (!session) return NextResponse.json({ error: "No active session" }, { status: 404 })
 
     if (action === "hint") {
-      const team = await useHint(session.id, teamIdNum)
-      return NextResponse.json({ team: team ? transformTeamRow(team as Record<string, unknown>) : null })
+      await useHint(session.id, teamIdNum)
+      return NextResponse.json({ ok: true })
     }
 
     if (action === "submit") {
       const result = await submitAnswer(session.id, teamIdNum, answer, TOTAL_QUESTIONS)
-      return NextResponse.json({
-        team: result.team ? transformTeamRow(result.team as Record<string, unknown>) : null,
-        isCorrect: result.isCorrect
-      })
+      return NextResponse.json({ isCorrect: result.isCorrect })
     }
 
     if (action === "register") {

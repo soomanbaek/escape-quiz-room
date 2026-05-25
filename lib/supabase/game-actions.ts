@@ -351,10 +351,16 @@ export async function getCurrentQuestion(sessionId: string, questionNumber: numb
 // 힌트 사용
 export async function useHint(sessionId: string, teamId: number) {
   const supabase = createClient()
-  
-  const team = await getTeamState(sessionId, teamId)
-  if (!team) return null
-  
+
+  const { data: team } = await supabase
+    .from("teams")
+    .select("hints_used, penalty_seconds")
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (!team) return false
+
   await supabase
     .from("teams")
     .update({
@@ -363,8 +369,8 @@ export async function useHint(sessionId: string, teamId: number) {
     })
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
-  
-  return getTeamState(sessionId, teamId)
+
+  return true
 }
 
 // 정답 처리 후 다음 문제로 진행 (또는 탈출 완료)
@@ -395,11 +401,25 @@ async function advanceTeam(sessionId: string, teamId: number, currentQuestion: n
 
 // 정답 제출 (text / qr)
 export async function submitAnswer(sessionId: string, teamId: number, answer: string, totalQuestions: number) {
-  const team = await getTeamState(sessionId, teamId)
-  if (!team || team.is_finished) return { team, isCorrect: false }
+  const supabase = createClient()
 
-  const question = await getCurrentQuestion(sessionId, team.current_question)
-  if (!question) return { team, isCorrect: false }
+  const { data: team } = await supabase
+    .from("teams")
+    .select("current_question, is_finished")
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (!team || team.is_finished) return { isCorrect: false }
+
+  const { data: question } = await supabase
+    .from("questions")
+    .select("answer")
+    .eq("session_id", sessionId)
+    .eq("question_number", team.current_question)
+    .single()
+
+  if (!question) return { isCorrect: false }
 
   const isCorrect = answer.toLowerCase().trim() === question.answer.toLowerCase().trim()
 
@@ -407,8 +427,7 @@ export async function submitAnswer(sessionId: string, teamId: number, answer: st
     await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
   }
 
-  const updatedTeam = await getTeamState(sessionId, teamId)
-  return { team: updatedTeam, isCorrect }
+  return { isCorrect }
 }
 
 // 사진 미션 제출 (Claude 비전 채점)
