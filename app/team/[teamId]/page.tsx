@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
+import Image from "next/image"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -113,7 +114,7 @@ export default function TeamPlayPage() {
   const [credChecked, setCredChecked] = useState(false)
 
   const { data, mutate } = useSWR(`/api/team/${teamId}`, fetcher, {
-    refreshInterval: 1000
+    refreshInterval: 2000
   })
 
   const [answer, setAnswer] = useState("")
@@ -581,11 +582,14 @@ export default function TeamPlayPage() {
             <CardContent className="space-y-5">
               <div key={questionKey} className="animate-fade-in-up space-y-4">
                 {currentQuestion?.imageUrl && (
-                  <div className="rounded-xl overflow-hidden border border-border/30 bg-secondary/20">
-                    <img
+                  <div className="rounded-xl overflow-hidden border border-border/30 bg-secondary/20 relative w-full" style={{ minHeight: "8rem" }}>
+                    <Image
                       src={currentQuestion.imageUrl}
                       alt="문제 이미지"
+                      width={800}
+                      height={400}
                       className="w-full object-contain max-h-72"
+                      priority
                     />
                   </div>
                 )}

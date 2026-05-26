@@ -41,7 +41,7 @@ export const TEAM_NAMES = [
 
 export const HINT_PENALTY_SECONDS = 30
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
-export const TOTAL_QUESTIONS = 10
+export const TOTAL_QUESTIONS = 9
 
 export const SAMPLE_QUESTIONS: Question[] = [
   {
@@ -99,20 +99,12 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 8,
     type: "text",
-    question: "A ÷ L\nL ÷ Ə\n\n두 글자로 답하세요.",
-    answer: "특급",
-    hint: "이 문제에서 뭔가 이상한 점이 있지 않나요? 힌트: 배경과 글자 방향을 잘 살펴보세요",
-    imageUrl: "/questions/q8.png"
-  },
-  {
-    id: 9,
-    type: "text",
     question: "어떤 사람이 단어를 입력하려 했는데, 손의 위치가 잘못된 채로 타이핑을 해버렸습니다.\n출력된 암호를 보고 원래 단어를 맞춰보세요.\n\nQ W E R T Y U I O P\n A S D F G H J K L\n  Z X C V B N M\n\n암호: N T S O M D",
     answer: "BRAINS",
     hint: "키보드에서 각 암호 글자 주변의 키들을 살펴보세요. 손가락 위치가 어느 방향으로 틀어졌을까요?",
   },
   {
-    id: 10,
+    id: 9,
     type: "text",
     question: "이번 워크샵에 참석한 인원수는? (숫자로 입력)",
     answer: "47",

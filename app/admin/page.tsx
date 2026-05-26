@@ -624,7 +624,7 @@ export default function AdminPage() {
                         <div className={`text-2xl font-mono font-bold transition-colors ${
                           team.isFinished ? "text-primary" : "text-foreground"
                         }`}>
-                          {isStarted ? formatTime(teamTime) : "--:--"}
+                          {isStarted || (startTime && team.isFinished) ? formatTime(teamTime) : "--:--"}
                         </div>
                         {team.isFinished && team.penaltySeconds > 0 && (
                           <div className="text-xs text-muted-foreground">
@@ -639,6 +639,86 @@ export default function AdminPage() {
             })}
           </div>
         </div>
+
+        {/* Game Results Summary (게임 종료 후) */}
+        {!isStarted && startTime && teams.length > 0 && (
+          <div className="space-y-4 animate-fade-in-up" style={{ animationDelay: "0.5s" }}>
+            <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-accent" />
+              최종 결과
+            </h2>
+            <Card className="border-border/50">
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/50 bg-secondary/30">
+                        <th className="text-center p-3 text-muted-foreground font-medium w-12">순위</th>
+                        <th className="text-left p-3 text-muted-foreground font-medium">팀</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">소요 시간</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">완료 문제</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">힌트</th>
+                        <th className="text-center p-3 text-muted-foreground font-medium">패널티</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...teams]
+                        .sort((a, b) => {
+                          if (a.isFinished && !b.isFinished) return -1
+                          if (!a.isFinished && b.isFinished) return 1
+                          if (a.isFinished && b.isFinished) {
+                            const aTime = ((a.endTime || 0) - startTime) + (a.penaltySeconds * 1000)
+                            const bTime = ((b.endTime || 0) - startTime) + (b.penaltySeconds * 1000)
+                            return aTime - bTime
+                          }
+                          return (b.currentQuestion - 1) - (a.currentQuestion - 1)
+                        })
+                        .map((team, i) => {
+                          const finishTime = team.isFinished && team.endTime
+                            ? ((team.endTime - startTime) + (team.penaltySeconds * 1000))
+                            : null
+                          const rank = team.isFinished ? i + 1 : null
+                          return (
+                            <tr key={team.teamId} className={`border-b border-border/30 transition-colors hover:bg-secondary/20 ${i === 0 && team.isFinished ? "bg-accent/5" : ""}`}>
+                              <td className="p-3 text-center">
+                                {rank ? (
+                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                                    rank === 1 ? "bg-accent text-accent-foreground" :
+                                    rank === 2 ? "bg-muted-foreground/30 text-foreground" :
+                                    rank === 3 ? "bg-chart-4/30 text-chart-4" :
+                                    "bg-secondary text-muted-foreground"
+                                  }`}>{rank}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </td>
+                              <td className="p-3 font-medium text-foreground">Team {team.teamName}</td>
+                              <td className="p-3 text-center font-mono font-bold">
+                                {finishTime !== null
+                                  ? <span className="text-primary">{formatTime(finishTime)}</span>
+                                  : <span className="text-muted-foreground">미완료</span>
+                                }
+                              </td>
+                              <td className="p-3 text-center text-muted-foreground">
+                                {team.isFinished ? TOTAL_QUESTIONS : team.currentQuestion - 1} / {TOTAL_QUESTIONS}
+                              </td>
+                              <td className="p-3 text-center text-muted-foreground">{team.hintsUsed}회</td>
+                              <td className="p-3 text-center">
+                                {team.penaltySeconds > 0
+                                  ? <span className="text-destructive">+{team.penaltySeconds}초</span>
+                                  : <span className="text-muted-foreground">-</span>
+                                }
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Individual Stats */}
         {isStarted && memberStats.length > 0 && (
