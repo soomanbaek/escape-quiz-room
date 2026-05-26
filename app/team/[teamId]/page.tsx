@@ -332,8 +332,6 @@ export default function TeamPlayPage() {
     ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
     : elapsedTime + (team.penaltySeconds * 1000)
 
-  const memberCount = team.memberCount || 0
-
   const handleChangeNickname = () => {
     localStorage.removeItem(CRED_NICKNAME_KEY)
     localStorage.removeItem(CRED_TEAM_KEY)
@@ -354,12 +352,6 @@ export default function TeamPlayPage() {
               <Users className="w-10 h-10 text-primary" />
             </div>
             <CardTitle className="text-3xl font-bold">Team {team.teamName}</CardTitle>
-            {memberCount > 0 && (
-              <p className="text-sm text-primary mt-2 flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-live-dot" />
-                {memberCount}명 참여 중
-              </p>
-            )}
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
             <div className="h-12 flex items-center justify-center rounded-md bg-secondary border border-border text-foreground font-medium">
@@ -403,6 +395,9 @@ export default function TeamPlayPage() {
 
   // 게임 종료 화면
   if (!isGameStarted && gameStartTime) {
+    const finishTime = team.isFinished && team.endTime
+      ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
+      : totalTime
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
@@ -415,9 +410,23 @@ export default function TeamPlayPage() {
               <h2 className="text-3xl font-bold text-foreground mb-2">Team {team.teamName}</h2>
               <p className="text-xl text-muted-foreground">게임이 종료되었습니다</p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              참여해주셔서 감사합니다!
-            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-secondary/50 rounded-xl p-4 border border-border/50">
+                <div className="text-sm text-muted-foreground mb-1">소요 시간</div>
+                <div className="text-2xl font-mono font-bold text-foreground tabular-nums">{formatTime(finishTime)}</div>
+              </div>
+              <div className="bg-secondary/50 rounded-xl p-4 border border-border/50">
+                <div className="text-sm text-muted-foreground mb-1">완료 문제</div>
+                <div className="text-2xl font-bold text-foreground">
+                  {team.isFinished ? TOTAL_QUESTIONS : team.currentQuestion - 1}
+                  <span className="text-base font-normal text-muted-foreground"> / {TOTAL_QUESTIONS}</span>
+                </div>
+              </div>
+            </div>
+            {team.penaltySeconds > 0 && (
+              <p className="text-sm text-muted-foreground">힌트 {team.hintsUsed}회 (+{team.penaltySeconds}초 패널티 포함)</p>
+            )}
+            <p className="text-sm text-muted-foreground">참여해주셔서 감사합니다!</p>
           </CardContent>
         </Card>
       </div>
@@ -436,10 +445,6 @@ export default function TeamPlayPage() {
             </div>
             <div>
               <h2 className="text-3xl font-bold text-foreground mb-2">Team {team.teamName}</h2>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary text-lg">
-                <Users className="w-5 h-5 text-primary" />
-                <span>{memberCount}명 참여 중</span>
-              </div>
             </div>
             <p className="text-xl text-muted-foreground">게임 시작을 기다리는 중...</p>
             <div className="flex items-center justify-center gap-2 text-muted-foreground">
@@ -508,10 +513,6 @@ export default function TeamPlayPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-foreground truncate">Team {team.teamName}</h1>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-primary/20 text-primary border border-primary/30">
-                <Users className="w-3 h-3" />
-                {memberCount}명
-              </span>
               {role === "reader" && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-secondary text-muted-foreground border border-border/50">
                   <Eye className="w-3 h-3" />

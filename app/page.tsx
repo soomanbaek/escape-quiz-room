@@ -84,7 +84,7 @@ export default function HomePage() {
         <Card className="border-border/50">
           <CardContent className="p-6 space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-muted-foreground block text-center">닉네임을 입력하세요</label>
+              <label className="text-sm text-muted-foreground block text-center">LDAP을 입력해주세요</label>
               <Input
                 ref={inputRef}
                 value={nickname}
