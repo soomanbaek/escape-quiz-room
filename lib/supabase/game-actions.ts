@@ -112,7 +112,8 @@ export async function getTeamPageData(teamId: number) {
       id: question.question_number,
       type: (question.type || "text") as "text" | "qr" | "photo",
       question: question.question,
-      hint: question.hint
+      hint: question.hint,
+      imageUrl: question.image_url || undefined,
     } : null,
     finishedTeams
   }
@@ -160,7 +161,8 @@ async function initializeGameData(sessionId: string) {
     type: q.type,
     question: q.question,
     hint: q.hint,
-    answer: q.answer
+    answer: q.answer,
+    image_url: q.imageUrl || null,
   }))
 
   const { error: insertError } = await supabase.from("questions").insert(questionsToInsert)
@@ -171,7 +173,8 @@ async function initializeGameData(sessionId: string) {
       question_number: q.id,
       question: q.question,
       hint: q.hint,
-      answer: q.answer
+      answer: q.answer,
+      image_url: q.imageUrl || null,
     }))
     await supabase.from("questions").insert(questionsWithoutType)
   }

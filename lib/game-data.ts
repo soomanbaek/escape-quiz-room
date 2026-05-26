@@ -7,6 +7,7 @@ export interface Question {
   // text/qr: 비교할 정답 / photo: Claude가 비교할 목표 설명(서버 전용)
   answer: string
   hint?: string
+  imageUrl?: string
 }
 
 export interface TeamState {
@@ -40,22 +41,24 @@ export const TEAM_NAMES = [
 
 export const HINT_PENALTY_SECONDS = 30
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
-export const TOTAL_QUESTIONS = 9
+export const TOTAL_QUESTIONS = 10
 
 export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 1,
     type: "text",
-    question: "화살표가 방위를 나타낸다. ↑=N, →=E, ↓=S, ←=W 일 때, 다음 화살표를 해독하시오: ↑→←↓",
-    answer: "NEWS",
-    hint: "화살표 4개를 순서대로 방위 이름(North, East, West, South)의 첫 글자로 바꿔 이어붙이면 영단어가 됩니다"
+    question: "각 사각형 안의 선분이 알파벳 획을 나타냅니다. 4개의 사각형이 만드는 단어는?",
+    answer: "EXIT",
+    hint: "사각형 안의 선분이 알파벳 한 획처럼 생겼습니다. 각 선분이 어느 글자의 특징적인 부분인지 생각해보세요",
+    imageUrl: "/questions/q1.png"
   },
   {
     id: 2,
     type: "text",
-    question: "다음 규칙을 보고 GKG를 해독하시오.\nENE → NINE\nKWK → WINK\nEWE → WINE",
-    answer: "KING",
-    hint: "첫 번째 글자는 버리고, '중간 글자 + 공통 두 글자 + 마지막 글자' 순으로 읽으세요. 세 예시에 공통으로 삽입된 두 글자를 찾아보세요"
+    question: "표에서 ?에 들어갈 숫자는?",
+    answer: "20",
+    hint: "맨 아래 행부터 시작해서 위로 올라가보세요. 각 숫자와 그 왼쪽·아래 숫자 사이의 관계를 찾아보세요",
+    imageUrl: "/questions/q2.png"
   },
   {
     id: 3,

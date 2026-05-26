@@ -538,7 +538,16 @@ export default function TeamPlayPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div key={questionKey} className="animate-fade-in-up">
+              <div key={questionKey} className="animate-fade-in-up space-y-4">
+                {currentQuestion?.imageUrl && (
+                  <div className="rounded-xl overflow-hidden border border-border/30 bg-secondary/20">
+                    <img
+                      src={currentQuestion.imageUrl}
+                      alt="문제 이미지"
+                      className="w-full object-contain max-h-72"
+                    />
+                  </div>
+                )}
                 <p className="text-xl md:text-2xl text-foreground leading-relaxed whitespace-pre-line">
                   {currentQuestion?.question}
                 </p>
