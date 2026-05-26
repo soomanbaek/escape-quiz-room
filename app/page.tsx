@@ -109,9 +109,6 @@ export default function HomePage() {
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "입장하기"}
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              닉네임은 운영자에게 받으셨습니다
-            </p>
           </CardContent>
         </Card>
       </div>
