@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users, QrCode, Camera, X, Loader2, LogOut } from "lucide-react"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye } from "lucide-react"
 
 const CRED_NICKNAME_KEY = "escape_nickname"
 const CRED_TEAM_KEY = "escape_team_id"
@@ -107,6 +107,7 @@ export default function TeamPlayPage() {
   const teamId = params.teamId as string
 
   const [hasJoined, setHasJoined] = useState(false)
+  const [role, setRole] = useState<"writer" | "reader" | null>(null)
   const [sessionId, setSessionId] = useState<string>("")
   const [nickname, setNickname] = useState<string>("")
   const [credChecked, setCredChecked] = useState(false)
@@ -170,7 +171,9 @@ export default function TeamPlayPage() {
 
     // 이미 입장했던 디바이스면 자동 재입장
     const joined = sessionStorage.getItem(`team-${teamId}-joined`) === "1"
-    if (joined) {
+    const storedRole = sessionStorage.getItem(`team-${teamId}-role`) as "writer" | "reader" | null
+    if (joined && storedRole) {
+      setRole(storedRole)
       setHasJoined(true)
       fetch(`/api/team/${teamId}`, {
         method: "POST",
@@ -217,16 +220,24 @@ export default function TeamPlayPage() {
     lastQuestionRef.current = q
   }, [team?.currentQuestion])
 
-  // 팀 입장
-  const handleJoin = useCallback(async () => {
+  // 팀 입장 (역할 선택)
+  const handleJoinAs = useCallback(async (selectedRole: "writer" | "reader") => {
     if (!sessionId) return
+    if (selectedRole === "writer") {
+      await fetch(`/api/team/${teamId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "register", sessionId, nickname })
+      })
+    }
     await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "join", sessionId, nickname })
     })
     sessionStorage.setItem(`team-${teamId}-joined`, "1")
-    sessionStorage.setItem(`team-${teamId}-nick`, nickname)
+    sessionStorage.setItem(`team-${teamId}-role`, selectedRole)
+    setRole(selectedRole)
     setHasJoined(true)
   }, [teamId, sessionId, nickname])
 
@@ -330,8 +341,9 @@ export default function TeamPlayPage() {
     router.replace("/")
   }
 
-  // 입장 화면
+  // 입장 화면 (역할 선택)
   if (!hasJoined) {
+    const isWriterTaken = team.hasPlayer && team.playerSessionId !== sessionId
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
@@ -353,12 +365,28 @@ export default function TeamPlayPage() {
             <div className="h-12 flex items-center justify-center rounded-md bg-secondary border border-border text-foreground font-medium">
               {nickname}
             </div>
+            <p className="text-sm text-muted-foreground text-center">역할을 선택하세요</p>
             <Button
-              onClick={handleJoin}
-              className="w-full h-16 text-xl bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
+              onClick={() => handleJoinAs("writer")}
+              disabled={!!isWriterTaken}
+              className="w-full h-16 text-lg bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-50"
             >
-              <Gamepad2 className="w-6 h-6 mr-3" />
-              입장하기
+              <Crown className="w-5 h-5 mr-2.5" />
+              <span className="flex flex-col items-start leading-tight">
+                <span>참여자</span>
+                <span className="text-xs opacity-80 font-normal">{isWriterTaken ? "이미 선택됨" : "정답 제출 가능"}</span>
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handleJoinAs("reader")}
+              className="w-full h-14 text-lg border-border/60 hover:border-primary/40 hover:bg-secondary/50 transition-all duration-300"
+            >
+              <Eye className="w-5 h-5 mr-2.5" />
+              <span className="flex flex-col items-start leading-tight">
+                <span>뷰어</span>
+                <span className="text-xs opacity-60 font-normal">관람만 가능</span>
+              </span>
             </Button>
             <button
               onClick={handleChangeNickname}
@@ -484,6 +512,18 @@ export default function TeamPlayPage() {
                 <Users className="w-3 h-3" />
                 {memberCount}명
               </span>
+              {role === "reader" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-secondary text-muted-foreground border border-border/50">
+                  <Eye className="w-3 h-3" />
+                  뷰어
+                </span>
+              )}
+              {role === "writer" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs shrink-0 bg-accent/20 text-accent border border-accent/30">
+                  <Crown className="w-3 h-3" />
+                  참여자
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
               문제 {team.currentQuestion} / {TOTAL_QUESTIONS}
@@ -554,7 +594,7 @@ export default function TeamPlayPage() {
               </div>
 
               {/* Hint */}
-              {currentQuestion?.hint && (
+              {currentQuestion?.hint && role !== "reader" && (
                 <div>
                   {!showHint ? (
                     <Button
@@ -593,8 +633,16 @@ export default function TeamPlayPage() {
         style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
       >
         <div className="max-w-3xl mx-auto space-y-3">
+          {/* 뷰어 모드 표시 */}
+          {role === "reader" ? (
+            <div className="flex items-center justify-center gap-2 h-14 rounded-xl bg-secondary/60 border border-border/40 text-muted-foreground text-sm">
+              <Eye className="w-4 h-4" />
+              뷰어 모드 — 참여자가 정답을 제출합니다
+            </div>
+          ) : null}
+
           {/* 텍스트/QR 정답 피드백 */}
-          {feedback.type && (
+          {role !== "reader" && feedback.type && (
             <div className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm animate-fade-in ${
               feedback.type === "correct"
                 ? "bg-primary/10 text-primary border border-primary/20"
@@ -609,7 +657,7 @@ export default function TeamPlayPage() {
           )}
 
           {/* 사진 채점 결과 */}
-          {photoResult && (
+          {role !== "reader" && photoResult && (
             <div className={`px-4 py-3 rounded-lg animate-fade-in ${
               photoResult.isCorrect
                 ? "bg-primary/10 border border-primary/20"
@@ -624,8 +672,8 @@ export default function TeamPlayPage() {
             </div>
           )}
 
-          {/* 입력 컨트롤 (문제 유형별) */}
-          {questionType === "photo" ? (
+          {/* 입력 컨트롤 (문제 유형별, 참여자만) */}
+          {role !== "reader" && (questionType === "photo" ? (
             <>
               <input
                 ref={fileInputRef}
@@ -706,7 +754,7 @@ export default function TeamPlayPage() {
                 </Button>
               </form>
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>
