@@ -648,6 +648,63 @@ export async function updateTeamName(sessionId: string, teamId: number, newName:
   return true
 }
 
+// 닉네임 자격 증명 검증
+export async function validateNickname(nickname: string): Promise<{ teamId: number } | null> {
+  if (!nickname.trim()) return null
+  const supabase = createClient()
+  const { data } = await supabase
+    .from("nickname_credentials")
+    .select("team_id")
+    .eq("nickname", nickname.trim())
+    .maybeSingle()
+  if (!data) return null
+  return { teamId: data.team_id }
+}
+
+// 닉네임 목록 조회 (관리자용)
+export async function getNicknameList(): Promise<Array<{ id: number; nickname: string; teamId: number }>> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from("nickname_credentials")
+    .select("id, nickname, team_id")
+    .order("team_id", { ascending: true })
+    .order("nickname", { ascending: true })
+  return (data || []).map(r => ({ id: r.id, nickname: r.nickname, teamId: r.team_id }))
+}
+
+// 닉네임 추가 (관리자용)
+export async function addNickname(nickname: string, teamId: number): Promise<{ success: boolean; error?: string }> {
+  if (!nickname.trim()) return { success: false, error: "닉네임을 입력하세요" }
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("nickname_credentials")
+    .insert({ nickname: nickname.trim(), team_id: teamId })
+  if (error) return { success: false, error: error.code === "23505" ? "이미 존재하는 닉네임입니다" : error.message }
+  return { success: true }
+}
+
+// 닉네임 삭제 (관리자용)
+export async function deleteNickname(id: number): Promise<boolean> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("nickname_credentials")
+    .delete()
+    .eq("id", id)
+  return !error
+}
+
+// 닉네임 수정 (관리자용)
+export async function updateNickname(id: number, newNickname: string, newTeamId: number): Promise<{ success: boolean; error?: string }> {
+  if (!newNickname.trim()) return { success: false, error: "닉네임을 입력하세요" }
+  const supabase = createClient()
+  const { error } = await supabase
+    .from("nickname_credentials")
+    .update({ nickname: newNickname.trim(), team_id: newTeamId })
+    .eq("id", id)
+  if (error) return { success: false, error: error.code === "23505" ? "이미 존재하는 닉네임입니다" : error.message }
+  return { success: true }
+}
+
 // 플레이어 해제
 export async function unregisterPlayer(sessionId: string, teamId: number, playerSessionId: string) {
   const supabase = createClient()

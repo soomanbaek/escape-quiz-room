@@ -1,88 +1,119 @@
 "use client"
 
-import Link from "next/link"
+import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { TEAM_NAMES } from "@/lib/game-data"
-import { Lock, Users, Shield, ArrowRight } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Lock, Loader2 } from "lucide-react"
+
+export const CRED_NICKNAME_KEY = "escape_nickname"
+export const CRED_TEAM_KEY = "escape_team_id"
 
 export default function HomePage() {
-  return (
-    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
-      {/* Animated background grid */}
-      <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
-      {/* Radial glow */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+  const router = useRouter()
+  const [nickname, setNickname] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [checking, setChecking] = useState(true)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-      {/* Hero Section */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
-        <div className="max-w-4xl mx-auto text-center space-y-8">
-          <div className="space-y-4 animate-fade-in-up">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 rounded-full text-primary text-sm">
-              <Lock className="w-4 h-4 animate-float" />
-              Workshop Edition
-            </div>
-            <h1 className="text-5xl md:text-7xl font-bold text-foreground tracking-tight">
-              ESCAPE
-              <span className="text-primary animate-glow-text"> ROOM</span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              7개의 문제를 가장 빠르게 풀고 탈출하세요.
-              <br />
-              힌트를 사용하면 30초의 패널티가 추가됩니다.
-            </p>
+  useEffect(() => {
+    const storedNickname = localStorage.getItem(CRED_NICKNAME_KEY)
+    const storedTeamId = localStorage.getItem(CRED_TEAM_KEY)
+    if (storedNickname && storedTeamId !== null) {
+      const tid = parseInt(storedTeamId)
+      router.replace(tid === 0 ? "/admin" : `/team/${tid}`)
+    } else {
+      setChecking(false)
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }, [router])
 
-          </div>
+  const handleSubmit = async () => {
+    const trimmed = nickname.trim()
+    if (!trimmed || loading) return
+    setLoading(true)
+    setError("")
+    try {
+      const res = await fetch("/api/auth/nickname", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname: trimmed }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || "오류가 발생했습니다")
+        return
+      }
+      localStorage.setItem(CRED_NICKNAME_KEY, trimmed)
+      localStorage.setItem(CRED_TEAM_KEY, String(data.teamId))
+      router.push(data.teamId === 0 ? "/admin" : `/team/${data.teamId}`)
+    } catch {
+      setError("서버에 연결할 수 없습니다")
+    } finally {
+      setLoading(false)
+    }
+  }
 
-          {/* Team Selection */}
-          <div className="space-y-4">
-            <h2
-              className="text-lg font-medium text-muted-foreground flex items-center justify-center gap-2 animate-fade-in-up"
-              style={{ animationDelay: "0.1s" }}
-            >
-              <Users className="w-5 h-5" />
-              팀을 선택하세요
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
-              {TEAM_NAMES.map((name, index) => (
-                <Link
-                  key={index}
-                  href={`/team/${index + 1}`}
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${0.15 + index * 0.07}s` }}
-                >
-                  <Card className="border-border/50 hover:border-primary/50 hover:bg-primary/5 hover:shadow-[0_0_24px_oklch(0.75_0.18_145_/_0.12)] transition-all duration-300 cursor-pointer group">
-                    <CardContent className="p-6 text-center">
-                      <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-secondary flex items-center justify-center text-lg font-bold text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:shadow-[0_0_16px_oklch(0.75_0.18_145_/_0.5)] transition-all duration-300">
-                        {index + 1}
-                      </div>
-                      <div className="font-semibold text-foreground">Team {name}</div>
-                      <div className="flex items-center justify-center gap-1 mt-2 text-sm text-muted-foreground group-hover:text-primary transition-colors">
-                        입장하기
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
+    )
+  }
 
-      {/* Admin Link */}
-      <div className="p-6 border-t border-border relative z-10">
-        <div className="max-w-4xl mx-auto flex justify-center">
-          <Link href="/admin">
-            <Button
-              variant="outline"
-              className="border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all duration-300"
-            >
-              <Shield className="w-4 h-4 mr-2" />
-              관리자 페이지
-            </Button>
-          </Link>
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+
+      <div className="relative z-10 w-full max-w-sm space-y-8 animate-fade-in-up">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 rounded-full text-primary text-sm">
+            <Lock className="w-4 h-4 animate-float" />
+            Workshop Edition
+          </div>
+          <h1 className="text-5xl font-bold text-foreground tracking-tight">
+            ESCAPE
+            <span className="text-primary animate-glow-text"> ROOM</span>
+          </h1>
         </div>
+
+        <Card className="border-border/50">
+          <CardContent className="p-6 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground block text-center">닉네임을 입력하세요</label>
+              <Input
+                ref={inputRef}
+                value={nickname}
+                onChange={(e) => { setNickname(e.target.value); setError("") }}
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                placeholder="예: rowan.1"
+                maxLength={30}
+                className={`h-12 text-center bg-input border-border focus:border-primary/60 ${error ? "border-destructive focus:border-destructive" : ""}`}
+                disabled={loading}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+              {error && (
+                <p className="text-sm text-destructive text-center animate-fade-in">{error}</p>
+              )}
+            </div>
+            <Button
+              onClick={handleSubmit}
+              disabled={!nickname.trim() || loading}
+              className="w-full h-12 text-base bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "입장하기"}
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              닉네임은 운영자에게 받으셨습니다
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

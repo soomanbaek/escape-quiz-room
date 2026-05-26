@@ -5,9 +5,15 @@ import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TOTAL_QUESTIONS } from "@/lib/game-data"
+import { TOTAL_QUESTIONS, TEAM_NAMES } from "@/lib/game-data"
 import type { TeamState } from "@/lib/game-data"
-import { Play, RotateCcw, Square, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star } from "lucide-react"
+import { Play, RotateCcw, Square, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star, Plus, Trash2, KeyRound } from "lucide-react"
+
+interface NicknameEntry {
+  id: number
+  nickname: string
+  teamId: number
+}
 
 interface MemberStat {
   deviceId: string
@@ -154,6 +160,172 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
   )
 }
 
+const TEAM_OPTIONS = [
+  { value: 0, label: "관리자" },
+  ...TEAM_NAMES.map((name, i) => ({ value: i + 1, label: `Team ${name}` }))
+]
+
+function NicknameManager({ nicknames, onMutate }: { nicknames: NicknameEntry[]; onMutate: () => void }) {
+  const [newNickname, setNewNickname] = useState("")
+  const [newTeamId, setNewTeamId] = useState(1)
+  const [addError, setAddError] = useState("")
+  const [addLoading, setAddLoading] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editNickname, setEditNickname] = useState("")
+  const [editTeamId, setEditTeamId] = useState(0)
+
+  const handleAdd = async () => {
+    if (!newNickname.trim()) return
+    setAddLoading(true)
+    setAddError("")
+    const res = await fetch("/api/admin/nicknames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nickname: newNickname.trim(), teamId: newTeamId }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setAddError(data.error || "오류 발생"); setAddLoading(false); return }
+    setNewNickname("")
+    setAddLoading(false)
+    onMutate()
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("이 닉네임을 삭제하시겠습니까?")) return
+    await fetch("/api/admin/nicknames", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    })
+    onMutate()
+  }
+
+  const startEdit = (entry: NicknameEntry) => {
+    setEditingId(entry.id)
+    setEditNickname(entry.nickname)
+    setEditTeamId(entry.teamId)
+  }
+
+  const saveEdit = async () => {
+    if (!editNickname.trim() || editingId === null) return
+    const res = await fetch("/api/admin/nicknames", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingId, nickname: editNickname.trim(), teamId: editTeamId }),
+    })
+    const data = await res.json()
+    if (!res.ok) { alert(data.error || "오류 발생"); return }
+    setEditingId(null)
+    onMutate()
+  }
+
+  const groupedByTeam = TEAM_OPTIONS.map(opt => ({
+    ...opt,
+    entries: nicknames.filter(n => n.teamId === opt.value)
+  }))
+
+  return (
+    <Card className="border-border/50 animate-fade-in-up" style={{ animationDelay: "0.8s" }}>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <KeyRound className="w-5 h-5 text-primary" />
+          닉네임 관리
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Add form */}
+        <div className="flex gap-2 flex-wrap">
+          <Input
+            value={newNickname}
+            onChange={e => { setNewNickname(e.target.value); setAddError("") }}
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+            placeholder="새 닉네임"
+            maxLength={30}
+            className="h-9 flex-1 min-w-32 bg-secondary border-border/50 focus:border-primary/50 text-sm"
+          />
+          <select
+            value={newTeamId}
+            onChange={e => setNewTeamId(parseInt(e.target.value))}
+            className="h-9 px-3 rounded-md bg-secondary border border-border/50 text-sm text-foreground focus:outline-none focus:border-primary/50"
+          >
+            {TEAM_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <Button
+            onClick={handleAdd}
+            disabled={!newNickname.trim() || addLoading}
+            size="sm"
+            className="h-9 bg-primary hover:bg-primary/90"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            추가
+          </Button>
+        </div>
+        {addError && <p className="text-sm text-destructive">{addError}</p>}
+
+        {/* Nickname list grouped by team */}
+        <div className="space-y-4">
+          {groupedByTeam.map(group => group.entries.length > 0 && (
+            <div key={group.value}>
+              <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                {group.label}
+              </div>
+              <div className="space-y-1">
+                {group.entries.map(entry => (
+                  <div key={entry.id} className="flex items-center gap-2 px-3 py-2 rounded-md bg-secondary/40 border border-border/30">
+                    {editingId === entry.id ? (
+                      <>
+                        <Input
+                          value={editNickname}
+                          onChange={e => setEditNickname(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditingId(null) }}
+                          className="h-7 flex-1 text-sm px-2 py-0 bg-background border-primary/40"
+                          autoFocus
+                        />
+                        <select
+                          value={editTeamId}
+                          onChange={e => setEditTeamId(parseInt(e.target.value))}
+                          className="h-7 px-2 rounded bg-background border border-border/50 text-xs text-foreground focus:outline-none"
+                        >
+                          {TEAM_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button onClick={saveEdit} className="text-primary hover:text-primary/80 transition-colors">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingId(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-1 text-sm font-mono text-foreground">{entry.nickname}</span>
+                        <button onClick={() => startEdit(entry)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleDelete(entry.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {nicknames.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              등록된 닉네임이 없습니다
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState<boolean | null>(null)
 
@@ -167,7 +339,9 @@ export default function AdminPage() {
   const { data: statsData } = useSWR(authed ? "/api/admin/stats" : null, fetcher, {
     refreshInterval: 10000,
   })
+  const { data: nicknameData, mutate: mutateNicknames } = useSWR(authed ? "/api/admin/nicknames" : null, fetcher)
   const memberStats: MemberStat[] = statsData?.stats || []
+  const nicknameList: NicknameEntry[] = nicknameData?.nicknames || []
 
   const [elapsedTime, setElapsedTime] = useState(0)
 
@@ -570,34 +744,8 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Team Access Links */}
-        {!isStarted && (
-          <Card className="border-border/50 animate-fade-in-up" style={{ animationDelay: "0.7s" }}>
-            <CardHeader>
-              <CardTitle className="text-lg">팀 접속 링크</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {teams.map(team => (
-                  <div
-                    key={team.teamId}
-                    className="p-4 bg-secondary/50 rounded-lg text-center border border-border/30 hover:border-primary/30 hover:bg-primary/5 transition-all duration-300"
-                  >
-                    <div className="font-semibold text-foreground mb-1">
-                      Team {team.teamName}
-                    </div>
-                    <code className="text-xs text-primary break-all">
-                      /team/{team.teamId}
-                    </code>
-                  </div>
-                ))}
-              </div>
-              <p className="text-sm text-muted-foreground mt-4">
-                각 팀에게 해당하는 URL을 공유하세요. 팀당 플레이어 1명이 참여할 수 있습니다.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {/* Nickname Management */}
+        <NicknameManager nicknames={nicknameList} onMutate={mutateNicknames} />
       </div>
     </div>
   )

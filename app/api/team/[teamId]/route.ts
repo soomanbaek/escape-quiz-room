@@ -26,21 +26,6 @@ export async function GET(
   }
 }
 
-function transformTeamRow(team: Record<string, unknown>) {
-  return {
-    ...team,
-    teamId: team.team_id,
-    teamName: team.team_name,
-    currentQuestion: team.current_question,
-    hintsUsed: team.hints_used,
-    penaltySeconds: team.penalty_seconds,
-    startTime: team.start_time ? new Date(team.start_time as string).getTime() : null,
-    endTime: team.end_time ? new Date(team.end_time as string).getTime() : null,
-    isFinished: team.is_finished,
-    hasPlayer: team.has_player,
-    playerSessionId: team.player_session_id
-  }
-}
 
 export async function POST(
   request: Request,
@@ -82,10 +67,7 @@ export async function POST(
 
     if (action === "register") {
       const result = await registerPlayer(session.id, teamIdNum, playerSessionId || "")
-      return NextResponse.json({
-        success: result.success,
-        team: result.team ? transformTeamRow(result.team as Record<string, unknown>) : null
-      })
+      return NextResponse.json({ success: result.success })
     }
 
     if (action === "unregister") {

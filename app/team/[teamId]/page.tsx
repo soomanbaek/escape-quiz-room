@@ -1,13 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users, QrCode, Camera, X, Loader2 } from "lucide-react"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Gamepad2, Users, QrCode, Camera, X, Loader2, LogOut } from "lucide-react"
+
+const CRED_NICKNAME_KEY = "escape_nickname"
+const CRED_TEAM_KEY = "escape_team_id"
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
@@ -100,11 +103,13 @@ function QrScanner({ onResult, onClose }: { onResult: (text: string) => void; on
 
 export default function TeamPlayPage() {
   const params = useParams()
+  const router = useRouter()
   const teamId = params.teamId as string
 
   const [hasJoined, setHasJoined] = useState(false)
   const [sessionId, setSessionId] = useState<string>("")
   const [nickname, setNickname] = useState<string>("")
+  const [credChecked, setCredChecked] = useState(false)
 
   const { data, mutate } = useSWR(`/api/team/${teamId}`, fetcher, {
     refreshInterval: 1000
@@ -134,33 +139,46 @@ export default function TeamPlayPage() {
   const isGameStarted = data?.isStarted
   const gameStartTime = data?.startTime
 
-  // 세션(디바이스) ID 초기화
+  // 자격 증명 확인 + 세션 ID 초기화 + 자동 재입장
   useEffect(() => {
-    const stored = sessionStorage.getItem(`team-${teamId}-session`)
-    if (stored) {
-      setSessionId(stored)
-    } else {
-      const newId = generateSessionId()
-      sessionStorage.setItem(`team-${teamId}-session`, newId)
-      setSessionId(newId)
-    }
-  }, [teamId])
+    const storedNickname = localStorage.getItem(CRED_NICKNAME_KEY)
+    const storedTeamId = localStorage.getItem(CRED_TEAM_KEY)
 
-  // 새로고침 시 이미 입장했던 디바이스면 자동 재입장
-  useEffect(() => {
-    if (!sessionId) return
+    // 자격 증명 없으면 홈으로 리다이렉트
+    if (!storedNickname || storedTeamId === null) {
+      router.replace("/")
+      return
+    }
+
+    // 다른 팀 자격 증명이면 홈으로 리다이렉트
+    if (parseInt(storedTeamId) !== parseInt(teamId)) {
+      router.replace("/")
+      return
+    }
+
+    // 자격 증명 OK → 닉네임 세팅
+    setNickname(storedNickname)
+    setCredChecked(true)
+
+    // 세션(디바이스) ID 초기화
+    let sid = sessionStorage.getItem(`team-${teamId}-session`)
+    if (!sid) {
+      sid = generateSessionId()
+      sessionStorage.setItem(`team-${teamId}-session`, sid)
+    }
+    setSessionId(sid)
+
+    // 이미 입장했던 디바이스면 자동 재입장
     const joined = sessionStorage.getItem(`team-${teamId}-joined`) === "1"
     if (joined) {
-      const nick = sessionStorage.getItem(`team-${teamId}-nick`) || ""
-      setNickname(nick)
       setHasJoined(true)
       fetch(`/api/team/${teamId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join", sessionId, nickname: nick })
+        body: JSON.stringify({ action: "join", sessionId: sid, nickname: storedNickname })
       }).catch(() => {})
     }
-  }, [sessionId, teamId])
+  }, [teamId, router])
 
   // 하트비트 (접속 유지)
   useEffect(() => {
@@ -291,14 +309,10 @@ export default function TeamPlayPage() {
     setHintLoading(false)
   }, [teamId, hasJoined, mutate, hintLoading])
 
-  if (!team) {
+  if (!credChecked || !team) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Card className="w-full max-w-md">
-          <CardContent className="p-8 text-center">
-            <div className="animate-pulse text-muted-foreground text-xl">로딩 중...</div>
-          </CardContent>
-        </Card>
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     )
   }
@@ -309,7 +323,14 @@ export default function TeamPlayPage() {
 
   const memberCount = team.memberCount || 0
 
-  // 입장 화면 (멀티 디바이스 - 누구나 입장)
+  const handleChangeNickname = () => {
+    localStorage.removeItem(CRED_NICKNAME_KEY)
+    localStorage.removeItem(CRED_TEAM_KEY)
+    sessionStorage.removeItem(`team-${teamId}-joined`)
+    router.replace("/")
+  }
+
+  // 입장 화면
   if (!hasJoined) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
@@ -329,14 +350,9 @@ export default function TeamPlayPage() {
             )}
           </CardHeader>
           <CardContent className="space-y-4 pt-4">
-            <Input
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-              placeholder="닉네임 (선택)"
-              maxLength={12}
-              className="h-12 text-center bg-input border-border focus:border-primary/60"
-            />
+            <div className="h-12 flex items-center justify-center rounded-md bg-secondary border border-border text-foreground font-medium">
+              {nickname}
+            </div>
             <Button
               onClick={handleJoin}
               className="w-full h-16 text-xl bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
@@ -344,9 +360,13 @@ export default function TeamPlayPage() {
               <Gamepad2 className="w-6 h-6 mr-3" />
               입장하기
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              팀원 모두 각자 폰으로 입장해 함께 풀 수 있어요
-            </p>
+            <button
+              onClick={handleChangeNickname}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              다른 닉네임으로 입장
+            </button>
           </CardContent>
         </Card>
       </div>
@@ -493,7 +513,7 @@ export default function TeamPlayPage() {
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto relative z-10">
-        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4 pb-48">
           {/* Question Card */}
           <Card
             className={`border-border/50 transition-all duration-500 animate-fade-in-up ${
@@ -558,10 +578,10 @@ export default function TeamPlayPage() {
         </div>
       </div>
 
-      {/* Sticky Answer Area at bottom */}
+      {/* Floating Answer Area */}
       <div
-        className="shrink-0 px-4 pt-3 pb-4 border-t border-border/50 bg-background/90 backdrop-blur-sm relative z-20"
-        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        className="fixed bottom-0 left-0 right-0 px-4 pt-4 rounded-t-2xl border-t border-border/40 bg-background/95 backdrop-blur-xl z-30 shadow-[0_-8px_32px_oklch(0_0_0_/_0.15)]"
+        style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
       >
         <div className="max-w-3xl mx-auto space-y-3">
           {/* 텍스트/QR 정답 피드백 */}
