@@ -64,14 +64,10 @@ export async function getLatestSession() {
 export async function getTeamPageData(teamId: number) {
   const session = await getOrCreateGameSession()
   const supabase = createClient()
-  const since = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString()
 
-  // 팀 정보 + 멤버 수 병렬 조회
-  const [{ data: team }, { count: memberCount }] = await Promise.all([
-    supabase.from("teams").select("*").eq("session_id", session.id).eq("team_id", teamId).single(),
-    supabase.from("team_members").select("*", { count: "exact", head: true })
-      .eq("session_id", session.id).eq("team_id", teamId).gte("last_seen", since)
-  ])
+  // 팀 정보만 조회 (멤버 수는 팀 화면에서 미사용 → 쿼리 제거)
+  const { data: team } = await supabase
+    .from("teams").select("*").eq("session_id", session.id).eq("team_id", teamId).single()
 
   if (!team) return null
 
@@ -107,7 +103,7 @@ export async function getTeamPageData(teamId: number) {
     sessionId: session.id,
     isStarted: session.is_started,
     startTime: session.start_time ? new Date(session.start_time).getTime() : null,
-    team: { ...transformTeam(team), memberCount: memberCount || 0 },
+    team: transformTeam(team),
     currentQuestion: question ? {
       id: question.question_number,
       type: (question.type || "text") as "text" | "qr" | "photo",
