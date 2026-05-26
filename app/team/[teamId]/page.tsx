@@ -554,7 +554,7 @@ export default function TeamPlayPage() {
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto relative z-10">
-        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4 pb-48">
+        <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
           {/* Question Card */}
           <Card
             className={`border-border/50 transition-all duration-500 animate-fade-in-up ${
@@ -628,9 +628,9 @@ export default function TeamPlayPage() {
         </div>
       </div>
 
-      {/* Floating Answer Area */}
+      {/* Answer Area */}
       <div
-        className="fixed bottom-0 left-0 right-0 px-4 pt-4 rounded-t-2xl border-t border-border/40 bg-background/95 backdrop-blur-xl z-30 shadow-[0_-8px_32px_oklch(0_0_0_/_0.15)]"
+        className="shrink-0 px-4 pt-4 border-t border-border/40 bg-background/95 backdrop-blur-xl relative z-20 shadow-[0_-8px_32px_oklch(0_0_0_/_0.15)]"
         style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
       >
         <div className="max-w-3xl mx-auto space-y-3">
