@@ -351,10 +351,21 @@ export async function startGame() {
 export async function endGame() {
   const supabase = createClient()
   const session = await getOrCreateGameSession()
+  const now = new Date().toISOString()
+
   await supabase
     .from("game_sessions")
     .update({ is_started: false })
     .eq("id", session.id)
+
+  // 미완료 팀에도 종료 시각 기록 (시간 보존용)
+  await supabase
+    .from("teams")
+    .update({ end_time: now })
+    .eq("session_id", session.id)
+    .eq("is_finished", false)
+    .is("end_time", null)
+
   bustSessionCache()
   return getGameState()
 }

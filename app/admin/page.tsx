@@ -517,7 +517,7 @@ export default function AdminPage() {
           </h2>
           <div className="grid gap-4">
             {sortedTeams.map((team, index) => {
-              const teamTime = team.isFinished && team.endTime && startTime
+              const teamTime = team.endTime && startTime
                 ? (team.endTime - startTime) + (team.penaltySeconds * 1000)
                 : elapsedTime + (team.penaltySeconds * 1000)
 
@@ -624,7 +624,7 @@ export default function AdminPage() {
                         <div className={`text-2xl font-mono font-bold transition-colors ${
                           team.isFinished ? "text-primary" : "text-foreground"
                         }`}>
-                          {isStarted || (startTime && team.isFinished) ? formatTime(teamTime) : "--:--"}
+                          {startTime && (isStarted || team.endTime) ? formatTime(teamTime) : "--:--"}
                         </div>
                         {team.isFinished && team.penaltySeconds > 0 && (
                           <div className="text-xs text-muted-foreground">

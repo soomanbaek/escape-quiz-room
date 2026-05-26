@@ -396,7 +396,7 @@ export default function TeamPlayPage() {
 
   // 게임 종료 화면
   if (!isGameStarted && gameStartTime) {
-    const finishTime = team.isFinished && team.endTime
+    const finishTime = team.endTime
       ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
       : totalTime
     return (
