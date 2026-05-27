@@ -19,6 +19,11 @@ export async function POST(
       return NextResponse.json({ error: "활성 세션이 없습니다." }, { status: 404 })
     }
 
+    // 일시정지 중에는 제출 차단
+    if (session.paused_at) {
+      return NextResponse.json({ isCorrect: false, score: 0, reason: "일시정지 중입니다.", paused: true })
+    }
+
     const result = await submitPhotoAnswer(
       session.id,
       parseInt(teamId),
