@@ -39,6 +39,17 @@ export const TEAM_NAMES = [
   "Foxtrot"
 ]
 
+// 일시정지 시간을 제외한 경과 시간(ms) 계산.
+// reference: 현재 시각(진행중) / paused_at(일시정지중) / end_time(완료)
+export function computeElapsedMs(
+  startTime: number | null,
+  reference: number,
+  totalPausedMs: number
+): number {
+  if (startTime === null) return 0
+  return Math.max(0, reference - startTime - totalPausedMs)
+}
+
 export const HINT_PENALTY_SECONDS = 30
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
 export const TOTAL_QUESTIONS = 9
@@ -107,6 +118,6 @@ export const SAMPLE_QUESTIONS: Question[] = [
     id: 9,
     type: "text",
     question: "이번 워크샵에 참석한 인원수는? (숫자로 입력)",
-    answer: "47",
+    answer: "46",
   },
 ]

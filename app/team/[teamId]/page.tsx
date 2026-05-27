@@ -7,8 +7,8 @@ import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye } from "lucide-react"
+import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS, computeElapsedMs } from "@/lib/game-data"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye, Pause } from "lucide-react"
 
 const CRED_NICKNAME_KEY = "escape_nickname"
 const CRED_TEAM_KEY = "escape_team_id"
@@ -118,6 +118,8 @@ export default function TeamPlayPage() {
   })
 
   const [answer, setAnswer] = useState("")
+  const [pendingRole, setPendingRole] = useState<"writer" | "reader" | null>(null)
+  const [showWriterConfirm, setShowWriterConfirm] = useState(false)
   const [showHint, setShowHint] = useState(false)
   const [feedback, setFeedback] = useState<{ type: "correct" | "incorrect" | null; message: string }>({ type: null, message: "" })
   const [elapsedTime, setElapsedTime] = useState(0)
@@ -140,6 +142,9 @@ export default function TeamPlayPage() {
   const questionType: "text" | "qr" | "photo" = currentQuestion?.type || "text"
   const isGameStarted = data?.isStarted
   const gameStartTime = data?.startTime
+  const pausedAt: number | null = data?.pausedAt ?? null
+  const totalPausedMs: number = data?.totalPausedMs ?? 0
+  const isPaused = pausedAt !== null
 
   // 자격 증명 확인 + 세션 ID 초기화 + 자동 재입장
   useEffect(() => {
@@ -199,14 +204,19 @@ export default function TeamPlayPage() {
     return () => clearInterval(interval)
   }, [hasJoined, sessionId, teamId])
 
-  // 타이머
+  // 타이머 (일시정지 중에는 정지 시점 기준으로 고정)
   useEffect(() => {
     if (!isGameStarted || !gameStartTime || team?.isFinished) return
+    if (isPaused) {
+      setElapsedTime(computeElapsedMs(gameStartTime, pausedAt!, totalPausedMs))
+      return
+    }
+    setElapsedTime(computeElapsedMs(gameStartTime, Date.now(), totalPausedMs))
     const interval = setInterval(() => {
-      setElapsedTime(Date.now() - gameStartTime)
+      setElapsedTime(computeElapsedMs(gameStartTime, Date.now(), totalPausedMs))
     }, 100)
     return () => clearInterval(interval)
-  }, [isGameStarted, gameStartTime, team?.isFinished])
+  }, [isGameStarted, gameStartTime, team?.isFinished, isPaused, pausedAt, totalPausedMs])
 
   // 문제 변경 감지 → 카드 애니메이션 + 입력 상태 초기화
   useEffect(() => {
@@ -225,11 +235,19 @@ export default function TeamPlayPage() {
   const handleJoinAs = useCallback(async (selectedRole: "writer" | "reader") => {
     if (!sessionId) return
     if (selectedRole === "writer") {
-      await fetch(`/api/team/${teamId}`, {
+      const res = await fetch(`/api/team/${teamId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "register", sessionId, nickname })
       })
+      const result = await res.json().catch(() => ({ success: false }))
+      if (!result.success) {
+        // 이미 다른 참여자가 슬롯을 차지함
+        setPendingRole(null)
+        mutate()
+        alert("이미 다른 참여자가 입장했습니다. 뷰어로 참여해주세요.")
+        return
+      }
     }
     await fetch(`/api/team/${teamId}`, {
       method: "POST",
@@ -240,11 +258,11 @@ export default function TeamPlayPage() {
     sessionStorage.setItem(`team-${teamId}-role`, selectedRole)
     setRole(selectedRole)
     setHasJoined(true)
-  }, [teamId, sessionId, nickname])
+  }, [teamId, sessionId, nickname, mutate])
 
   // 정답 제출 (text / qr 공용)
   const submitValue = useCallback(async (value: string) => {
-    if (!value.trim() || !hasJoined) return
+    if (!value.trim() || !hasJoined || isPaused) return
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -267,7 +285,7 @@ export default function TeamPlayPage() {
       setTimeout(() => setFeedback({ type: null, message: "" }), 2000)
     }
     mutate()
-  }, [teamId, hasJoined, mutate])
+  }, [teamId, hasJoined, isPaused, sessionId, nickname, mutate])
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -283,7 +301,7 @@ export default function TeamPlayPage() {
   const handlePhotoChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ""
-    if (!file || !hasJoined) return
+    if (!file || !hasJoined || isPaused) return
     setPhotoLoading(true)
     setPhotoResult(null)
     try {
@@ -305,7 +323,7 @@ export default function TeamPlayPage() {
     } finally {
       setPhotoLoading(false)
     }
-  }, [teamId, hasJoined, mutate])
+  }, [teamId, hasJoined, isPaused, mutate])
 
   // 힌트 사용
   const handleUseHint = useCallback(async () => {
@@ -330,7 +348,7 @@ export default function TeamPlayPage() {
   }
 
   const totalTime = team.isFinished && team.endTime && gameStartTime
-    ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
+    ? computeElapsedMs(gameStartTime, team.endTime, totalPausedMs) + (team.penaltySeconds * 1000)
     : elapsedTime + (team.penaltySeconds * 1000)
 
   const handleChangeNickname = () => {
@@ -359,27 +377,47 @@ export default function TeamPlayPage() {
               {nickname}
             </div>
             <p className="text-sm text-muted-foreground text-center">역할을 선택하세요</p>
-            <Button
-              onClick={() => handleJoinAs("writer")}
+            <button
+              onClick={() => !isWriterTaken && setPendingRole("writer")}
               disabled={!!isWriterTaken}
-              className="w-full h-16 text-lg bg-primary hover:bg-primary/90 hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-50"
+              className={`w-full h-16 rounded-lg border-2 flex items-center px-4 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                pendingRole === "writer"
+                  ? "border-primary bg-primary/10 shadow-[0_0_16px_oklch(0.75_0.18_145_/_0.25)]"
+                  : "border-border/60 hover:border-primary/40"
+              }`}
             >
-              <Crown className="w-5 h-5 mr-2.5" />
-              <span className="flex flex-col items-start leading-tight">
-                <span>참여자</span>
-                <span className="text-xs opacity-80 font-normal">{isWriterTaken ? "이미 선택됨" : "정답 제출 가능"}</span>
+              <Crown className={`w-5 h-5 mr-2.5 ${pendingRole === "writer" ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="flex flex-col items-start leading-tight text-left">
+                <span className="text-lg font-medium text-foreground">참여자</span>
+                <span className="text-xs text-muted-foreground font-normal">{isWriterTaken ? "이미 선택됨 (1명만 가능)" : "정답 제출 가능 · 1명만"}</span>
               </span>
-            </Button>
+              {pendingRole === "writer" && <CheckCircle2 className="w-5 h-5 text-primary ml-auto" />}
+            </button>
+            <button
+              onClick={() => setPendingRole("reader")}
+              className={`w-full h-14 rounded-lg border-2 flex items-center px-4 transition-all duration-200 ${
+                pendingRole === "reader"
+                  ? "border-primary bg-primary/10"
+                  : "border-border/60 hover:border-primary/40"
+              }`}
+            >
+              <Eye className={`w-5 h-5 mr-2.5 ${pendingRole === "reader" ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="flex flex-col items-start leading-tight text-left">
+                <span className="text-lg font-medium text-foreground">뷰어</span>
+                <span className="text-xs text-muted-foreground font-normal">관람만 가능</span>
+              </span>
+              {pendingRole === "reader" && <CheckCircle2 className="w-5 h-5 text-primary ml-auto" />}
+            </button>
             <Button
-              variant="outline"
-              onClick={() => handleJoinAs("reader")}
-              className="w-full h-14 text-lg border-border/60 hover:border-primary/40 hover:bg-secondary/50 transition-all duration-300"
+              onClick={() => {
+                if (!pendingRole) return
+                if (pendingRole === "writer") setShowWriterConfirm(true)
+                else handleJoinAs("reader")
+              }}
+              disabled={!pendingRole}
+              className="w-full h-12 text-base bg-primary hover:bg-primary/90 transition-all duration-300 disabled:opacity-40"
             >
-              <Eye className="w-5 h-5 mr-2.5" />
-              <span className="flex flex-col items-start leading-tight">
-                <span>뷰어</span>
-                <span className="text-xs opacity-60 font-normal">관람만 가능</span>
-              </span>
+              확인
             </Button>
             <button
               onClick={handleChangeNickname}
@@ -390,6 +428,41 @@ export default function TeamPlayPage() {
             </button>
           </CardContent>
         </Card>
+
+        {/* 참여자 입장 확인 팝업 */}
+        {showWriterConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setShowWriterConfirm(false)}>
+            <Card className="w-full max-w-xs border-primary/30 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+              <CardContent className="p-6 text-center space-y-4">
+                <div className="w-14 h-14 mx-auto rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <Crown className="w-7 h-7 text-primary" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-bold text-foreground">참여자로 입장</h3>
+                  <p className="text-sm text-muted-foreground">
+                    정답을 제출하는 참여자는 팀당 <span className="text-foreground font-semibold">1명만</span> 접속할 수 있습니다.<br />
+                    참여자로 입장하시겠습니까?
+                  </p>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowWriterConfirm(false)}
+                    className="flex-1 h-11 border-border/60"
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    onClick={() => { setShowWriterConfirm(false); handleJoinAs("writer") }}
+                    className="flex-1 h-11 bg-primary hover:bg-primary/90"
+                  >
+                    확인
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     )
   }
@@ -397,7 +470,7 @@ export default function TeamPlayPage() {
   // 게임 종료 화면
   if (!isGameStarted && gameStartTime) {
     const finishTime = team.endTime
-      ? (team.endTime - gameStartTime) + (team.penaltySeconds * 1000)
+      ? computeElapsedMs(gameStartTime, team.endTime, totalPausedMs) + (team.penaltySeconds * 1000)
       : totalTime
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
@@ -463,8 +536,8 @@ export default function TeamPlayPage() {
     const startTime = data?.startTime || 0
     const ranking = data?.finishedTeams
       ?.sort((a: { endTime: number | null; penaltySeconds: number }, b: { endTime: number | null; penaltySeconds: number }) => {
-        const aTime = ((a.endTime || 0) - startTime) + (a.penaltySeconds * 1000)
-        const bTime = ((b.endTime || 0) - startTime) + (b.penaltySeconds * 1000)
+        const aTime = computeElapsedMs(startTime, a.endTime || 0, totalPausedMs) + (a.penaltySeconds * 1000)
+        const bTime = computeElapsedMs(startTime, b.endTime || 0, totalPausedMs) + (b.penaltySeconds * 1000)
         return aTime - bTime
       })
       ?.findIndex((t: { teamId: number }) => t.teamId === team.teamId) + 1 || 0
@@ -507,6 +580,19 @@ export default function TeamPlayPage() {
       <div className="absolute inset-0 bg-grid-escape pointer-events-none" />
 
       {qrOpen && <QrScanner onResult={handleQrResult} onClose={() => setQrOpen(false)} />}
+
+      {/* 일시정지 오버레이 */}
+      {isPaused && (
+        <div className="absolute inset-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
+          <div className="text-center space-y-4">
+            <div className="w-20 h-20 mx-auto rounded-full bg-accent/15 border border-accent/30 flex items-center justify-center">
+              <Pause className="w-10 h-10 text-accent" />
+            </div>
+            <h2 className="text-2xl font-bold text-foreground">일시정지</h2>
+            <p className="text-muted-foreground">관리자가 게임을 잠시 멈췄습니다.<br />잠시만 기다려주세요!</p>
+          </div>
+        </div>
+      )}
 
       {/* Sticky Header */}
       <div className="shrink-0 px-4 pt-4 pb-3 border-b border-border/50 bg-background/80 backdrop-blur-sm relative z-20 animate-fade-in-up" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>

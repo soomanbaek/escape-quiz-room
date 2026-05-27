@@ -10,9 +10,35 @@ const ACTIVE_WINDOW_MS = 15000
 
 // ─── In-memory cache (Vercel warm instance 재사용 최적화) ─────────────────────
 // 서버리스 환경에서 같은 인스턴스가 여러 요청을 처리할 때 DB 쿼리를 줄여줍니다.
-type SessionRow = { id: string; is_started: boolean; start_time: string | null }
+type SessionRow = {
+  id: string
+  is_started: boolean
+  start_time: string | null
+  paused_at?: string | null
+  total_paused_ms?: number | null
+}
 let _session: SessionRow | null = null
 let _sessionExp = 0
+
+// 일시정지 컬럼 포함 select (마이그레이션 전 환경에서는 fallback)
+const SESSION_COLS = "id, is_started, start_time, created_at, paused_at, total_paused_ms"
+const SESSION_COLS_BASE = "id, is_started, start_time, created_at"
+
+async function fetchLatestSession(supabase: ReturnType<typeof createClient>) {
+  const q = (cols: string) =>
+    supabase.from("game_sessions").select(cols).order("created_at", { ascending: false }).limit(1).maybeSingle()
+  let res = await q(SESSION_COLS)
+  if (res.error) res = await q(SESSION_COLS_BASE)
+  return res.data as SessionRow | null
+}
+
+// 세션의 일시정지 상태를 클라이언트 형식으로 변환
+function pauseInfo(session: SessionRow) {
+  return {
+    pausedAt: session.paused_at ? new Date(session.paused_at).getTime() : null,
+    totalPausedMs: session.total_paused_ms || 0,
+  }
+}
 
 // 세션-문제 캐시: key = `${sessionId}-${questionNumber}`
 const _questionCache = new Map<string, Record<string, unknown>>()
@@ -50,12 +76,7 @@ function createClient() {
 export async function getLatestSession() {
   if (_session && Date.now() < _sessionExp) return _session
   const supabase = createClient()
-  const { data } = await supabase
-    .from("game_sessions")
-    .select("id, is_started, start_time")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const data = await fetchLatestSession(supabase)
   if (data) { _session = data; _sessionExp = Date.now() + 5000 }
   return data
 }
@@ -103,6 +124,7 @@ export async function getTeamPageData(teamId: number) {
     sessionId: session.id,
     isStarted: session.is_started,
     startTime: session.start_time ? new Date(session.start_time).getTime() : null,
+    ...pauseInfo(session),
     team: transformTeam(team),
     currentQuestion: question ? {
       id: question.question_number,
@@ -120,16 +142,11 @@ export async function getOrCreateGameSession() {
   if (_session && Date.now() < _sessionExp) return _session
   const supabase = createClient()
 
-  const { data: sessions } = await supabase
-    .from("game_sessions")
-    .select("id, is_started, start_time, created_at")
-    .order("created_at", { ascending: false })
-    .limit(1)
-
-  if (sessions && sessions.length > 0) {
-    _session = sessions[0]
+  const existing = await fetchLatestSession(supabase)
+  if (existing) {
+    _session = existing
     _sessionExp = Date.now() + 5000
-    return sessions[0]
+    return existing
   }
 
   // 새 세션 생성 (최초 1회만 실행됨)
@@ -235,6 +252,7 @@ export async function getGameState() {
     sessionId: session.id,
     isStarted: session.is_started,
     startTime: session.start_time ? new Date(session.start_time).getTime() : null,
+    ...pauseInfo(session),
     teams: (teams || []).map(t => ({
       ...transformTeam(t),
       memberCount: memberCounts[t.team_id] || 0
@@ -320,10 +338,17 @@ export async function startGame() {
   const session = await getOrCreateGameSession()
   const now = new Date().toISOString()
 
-  await supabase
+  // 일시정지 상태 초기화 (컬럼 없는 환경에서는 fallback)
+  const startUpdate = await supabase
     .from("game_sessions")
-    .update({ is_started: true, start_time: now })
+    .update({ is_started: true, start_time: now, paused_at: null, total_paused_ms: 0 })
     .eq("id", session.id)
+  if (startUpdate.error) {
+    await supabase
+      .from("game_sessions")
+      .update({ is_started: true, start_time: now })
+      .eq("id", session.id)
+  }
 
   await supabase
     .from("teams")
@@ -464,6 +489,91 @@ async function advanceTeam(sessionId: string, teamId: number, currentQuestion: n
       .eq("session_id", sessionId)
       .eq("team_id", teamId)
   }
+}
+
+// 어드민이 특정 팀의 현재 문제를 강제로 통과 처리 (문제 오류 등)
+export async function skipTeamQuestion(sessionId: string, teamId: number, totalQuestions: number) {
+  const supabase = createClient()
+
+  const { data: team } = await supabase
+    .from("teams")
+    .select("current_question, is_finished")
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (!team || team.is_finished) return { success: false }
+
+  await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
+  return { success: true }
+}
+
+// 어드민이 특정 팀의 문제를 한 단계 되돌리기 (통과 실수 복구)
+export async function rewindTeamQuestion(sessionId: string, teamId: number) {
+  const supabase = createClient()
+
+  const { data: team } = await supabase
+    .from("teams")
+    .select("current_question, is_finished")
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (!team) return { success: false }
+
+  // 완료 상태면 완료 해제 (마지막 문제로 복귀)
+  if (team.is_finished) {
+    await supabase
+      .from("teams")
+      .update({ is_finished: false, end_time: null })
+      .eq("session_id", sessionId)
+      .eq("team_id", teamId)
+    return { success: true }
+  }
+
+  if (team.current_question <= 1) return { success: false }
+
+  await supabase
+    .from("teams")
+    .update({ current_question: team.current_question - 1 })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+
+  return { success: true }
+}
+
+// 게임 일시정지 (이미 정지 상태면 무시)
+export async function pauseGame() {
+  const supabase = createClient()
+  const session = await getOrCreateGameSession()
+  if (!session.is_started || session.paused_at) return getGameState()
+
+  await supabase
+    .from("game_sessions")
+    .update({ paused_at: new Date().toISOString() })
+    .eq("id", session.id)
+    .is("paused_at", null)
+
+  bustSessionCache()
+  return getGameState()
+}
+
+// 게임 재개 (정지된 시간을 누적하여 경과 시간에서 제외)
+export async function resumeGame() {
+  const supabase = createClient()
+  const session = await getOrCreateGameSession()
+  if (!session.paused_at) return getGameState()
+
+  const delta = Date.now() - new Date(session.paused_at).getTime()
+  const newTotal = (session.total_paused_ms || 0) + Math.max(0, delta)
+
+  await supabase
+    .from("game_sessions")
+    .update({ paused_at: null, total_paused_ms: newTotal })
+    .eq("id", session.id)
+
+  bustSessionCache()
+  return getGameState()
 }
 
 // 개인별 정답 기록 저장

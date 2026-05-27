@@ -5,9 +5,9 @@ import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TOTAL_QUESTIONS, TEAM_NAMES } from "@/lib/game-data"
+import { TOTAL_QUESTIONS, TEAM_NAMES, SAMPLE_QUESTIONS, computeElapsedMs } from "@/lib/game-data"
 import type { TeamState } from "@/lib/game-data"
-import { Play, RotateCcw, Square, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star, Plus, Trash2, KeyRound } from "lucide-react"
+import { Play, RotateCcw, Square, Trophy, Clock, Users, Lightbulb, CheckCircle2, Gamepad2, Pencil, Check, X, Lock, UserX, Zap, Star, Plus, Trash2, KeyRound, SkipForward, Undo2, Pause, KeyRound as Key, Eye, EyeOff } from "lucide-react"
 
 interface NicknameEntry {
   id: number
@@ -164,6 +164,51 @@ const TEAM_OPTIONS = [
   { value: 0, label: "관리자" },
   ...TEAM_NAMES.map((name, i) => ({ value: i + 1, label: `Team ${name}` }))
 ]
+
+function AnswerCheatSheet() {
+  const [show, setShow] = useState(false)
+
+  const typeLabel = (t: string) => t === "qr" ? "QR" : t === "photo" ? "사진" : "텍스트"
+
+  return (
+    <Card className="border-border/50 animate-fade-in-up" style={{ animationDelay: "0.75s" }}>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Key className="w-5 h-5 text-primary" />
+            문제 정답 (운영용)
+          </CardTitle>
+          <Button
+            onClick={() => setShow(s => !s)}
+            variant="outline"
+            size="sm"
+            className="h-8 border-border/50"
+          >
+            {show ? <><EyeOff className="w-4 h-4 mr-1" />숨기기</> : <><Eye className="w-4 h-4 mr-1" />정답 보기</>}
+          </Button>
+        </div>
+      </CardHeader>
+      {show && (
+        <CardContent className="space-y-2">
+          {SAMPLE_QUESTIONS.map(q => (
+            <div key={q.id} className="flex flex-col sm:flex-row sm:items-start gap-2 px-3 py-2 rounded-md bg-secondary/40 border border-border/30">
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/15 text-primary text-xs font-bold">{q.id}</span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground w-10">{typeLabel(q.type)}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs text-muted-foreground line-clamp-2">{q.question}</div>
+                <div className="text-sm font-mono font-semibold text-foreground mt-0.5 break-words">
+                  {q.type === "photo" ? <span className="text-accent">{q.answer}</span> : q.answer}
+                </div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  )
+}
 
 function NicknameManager({ nicknames, onMutate }: { nicknames: NicknameEntry[]; onMutate: () => void }) {
   const [newNickname, setNewNickname] = useState("")
@@ -349,17 +394,24 @@ export default function AdminPage() {
   const startTime = gameData?.startTime
   const sessionId = gameData?.sessionId
   const teams: TeamState[] = gameData?.teams || []
+  const pausedAt: number | null = gameData?.pausedAt ?? null
+  const totalPausedMs: number = gameData?.totalPausedMs ?? 0
+  const isPaused = pausedAt !== null
 
   useEffect(() => {
     if (!isStarted || !startTime) {
       setElapsedTime(0)
       return
     }
+    // 일시정지 중에는 정지 시점 기준으로 고정
+    const reference = isPaused ? pausedAt! : Date.now()
+    setElapsedTime(computeElapsedMs(startTime, reference, totalPausedMs))
+    if (isPaused) return
     const interval = setInterval(() => {
-      setElapsedTime(Date.now() - startTime)
+      setElapsedTime(computeElapsedMs(startTime, Date.now(), totalPausedMs))
     }, 100)
     return () => clearInterval(interval)
-  }, [isStarted, startTime])
+  }, [isStarted, startTime, isPaused, pausedAt, totalPausedMs])
 
   if (authed === null) return null
 
@@ -372,6 +424,15 @@ export default function AdminPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "start" }),
+    })
+    mutate()
+  }
+
+  const handlePauseToggle = async () => {
+    await fetch("/api/game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: isPaused ? "resume" : "pause" }),
     })
     mutate()
   }
@@ -400,8 +461,8 @@ export default function AdminPage() {
 
   const sortedTeams = [...teams].sort((a, b) => {
     if (a.isFinished && b.isFinished) {
-      const aTime = (a.endTime! - startTime!) + (a.penaltySeconds * 1000)
-      const bTime = (b.endTime! - startTime!) + (b.penaltySeconds * 1000)
+      const aTime = computeElapsedMs(startTime, a.endTime!, totalPausedMs) + (a.penaltySeconds * 1000)
+      const bTime = computeElapsedMs(startTime, b.endTime!, totalPausedMs) + (b.penaltySeconds * 1000)
       return aTime - bTime
     }
     if (a.isFinished) return -1
@@ -421,10 +482,16 @@ export default function AdminPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold text-foreground">방탈출 게임</h1>
-              {isStarted && (
+              {isStarted && !isPaused && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full text-primary text-sm">
                   <span className="w-2 h-2 rounded-full bg-primary animate-live-dot" />
                   LIVE
+                </span>
+              )}
+              {isStarted && isPaused && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-accent/10 border border-accent/20 rounded-full text-accent text-sm">
+                  <Pause className="w-3 h-3" />
+                  일시정지됨
                 </span>
               )}
             </div>
@@ -451,6 +518,16 @@ export default function AdminPage() {
                 </Button>
               ) : isStarted ? (
                 <>
+                  <Button
+                    onClick={handlePauseToggle}
+                    size="lg"
+                    className={isPaused
+                      ? "bg-primary hover:bg-primary/90 text-primary-foreground"
+                      : "bg-accent hover:bg-accent/90 text-accent-foreground"}
+                  >
+                    {isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
+                    {isPaused ? "재개" : "일시정지"}
+                  </Button>
                   <Button
                     onClick={handleEnd}
                     variant="outline"
@@ -518,7 +595,7 @@ export default function AdminPage() {
           <div className="grid gap-4">
             {sortedTeams.map((team, index) => {
               const teamTime = team.endTime && startTime
-                ? (team.endTime - startTime) + (team.penaltySeconds * 1000)
+                ? computeElapsedMs(startTime, team.endTime, totalPausedMs) + (team.penaltySeconds * 1000)
                 : elapsedTime + (team.penaltySeconds * 1000)
 
               const progress = ((team.currentQuestion - 1) / TOTAL_QUESTIONS) * 100
@@ -631,6 +708,47 @@ export default function AdminPage() {
                             (패널티 포함)
                           </div>
                         )}
+                        {isStarted && sessionId && (
+                          <div className="mt-2 flex items-center justify-end gap-1.5">
+                            {(team.currentQuestion > 1 || team.isFinished) && (
+                              <button
+                                onClick={async () => {
+                                  const label = team.isFinished ? "완료를 취소하고 마지막 문제로 되돌리" : `${team.currentQuestion - 1}번 문제로 되돌리`
+                                  if (!confirm(`Team ${team.teamName}를 ${label}시겠습니까?`)) return
+                                  await fetch("/api/game", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ action: "rewindQuestion", sessionId, teamId: team.teamId }),
+                                  })
+                                  mutate()
+                                }}
+                                title="이전 문제로 되돌리기"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-secondary text-muted-foreground text-xs rounded-md border border-border/50 hover:text-foreground hover:bg-secondary/70 transition-colors"
+                              >
+                                <Undo2 className="w-3.5 h-3.5" />
+                                되돌리기
+                              </button>
+                            )}
+                            {!team.isFinished && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`Team ${team.teamName}의 ${team.currentQuestion}번 문제를 통과 처리하시겠습니까?`)) return
+                                  await fetch("/api/game", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ action: "skipQuestion", sessionId, teamId: team.teamId }),
+                                  })
+                                  mutate()
+                                }}
+                                title="현재 문제 통과 처리"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-accent/10 text-accent text-xs rounded-md border border-accent/20 hover:bg-accent/20 transition-colors"
+                              >
+                                <SkipForward className="w-3.5 h-3.5" />
+                                {team.currentQuestion}번 통과
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -667,15 +785,15 @@ export default function AdminPage() {
                           if (a.isFinished && !b.isFinished) return -1
                           if (!a.isFinished && b.isFinished) return 1
                           if (a.isFinished && b.isFinished) {
-                            const aTime = ((a.endTime || 0) - startTime) + (a.penaltySeconds * 1000)
-                            const bTime = ((b.endTime || 0) - startTime) + (b.penaltySeconds * 1000)
+                            const aTime = computeElapsedMs(startTime, a.endTime || 0, totalPausedMs) + (a.penaltySeconds * 1000)
+                            const bTime = computeElapsedMs(startTime, b.endTime || 0, totalPausedMs) + (b.penaltySeconds * 1000)
                             return aTime - bTime
                           }
                           return (b.currentQuestion - 1) - (a.currentQuestion - 1)
                         })
                         .map((team, i) => {
                           const finishTime = team.isFinished && team.endTime
-                            ? ((team.endTime - startTime) + (team.penaltySeconds * 1000))
+                            ? computeElapsedMs(startTime, team.endTime, totalPausedMs) + (team.penaltySeconds * 1000)
                             : null
                           const rank = team.isFinished ? i + 1 : null
                           return (
@@ -823,6 +941,9 @@ export default function AdminPage() {
             </Card>
           </div>
         )}
+
+        {/* Answer Cheat Sheet */}
+        <AnswerCheatSheet />
 
         {/* Nickname Management */}
         <NicknameManager nicknames={nicknameList} onMutate={mutateNicknames} />

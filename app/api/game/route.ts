@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 // Game API - Supabase 연동
-import { getGameState, startGame, endGame, resetGame, updateTeamName, resetTeamPlayer } from "@/lib/supabase/game-actions"
+import { getGameState, startGame, endGame, resetGame, updateTeamName, resetTeamPlayer, skipTeamQuestion, rewindTeamQuestion, pauseGame, resumeGame } from "@/lib/supabase/game-actions"
+import { TOTAL_QUESTIONS } from "@/lib/game-data"
 
 export async function GET() {
   try {
@@ -30,6 +31,22 @@ export async function POST(request: Request) {
       const { sessionId, teamId } = body as { sessionId: string; teamId: number }
       await resetTeamPlayer(sessionId, teamId)
       const gameState = await getGameState()
+      return NextResponse.json(gameState)
+    } else if (action === "skipQuestion") {
+      const { sessionId, teamId } = body as { sessionId: string; teamId: number }
+      await skipTeamQuestion(sessionId, teamId, TOTAL_QUESTIONS)
+      const gameState = await getGameState()
+      return NextResponse.json(gameState)
+    } else if (action === "rewindQuestion") {
+      const { sessionId, teamId } = body as { sessionId: string; teamId: number }
+      await rewindTeamQuestion(sessionId, teamId)
+      const gameState = await getGameState()
+      return NextResponse.json(gameState)
+    } else if (action === "pause") {
+      const gameState = await pauseGame()
+      return NextResponse.json(gameState)
+    } else if (action === "resume") {
+      const gameState = await resumeGame()
       return NextResponse.json(gameState)
     } else if (action === "updateTeamName") {
       const { sessionId, teamId, newName } = body as { sessionId: string; teamId: number; newName: string }
