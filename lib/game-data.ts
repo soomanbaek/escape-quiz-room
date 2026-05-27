@@ -88,7 +88,7 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 5,
     type: "text",
-    question: "화살표를 알파벳으로 바꿔 단어를 해독하세요. (→=E, ↑=N, ↓=S, ←=W)",
+    question: "화살표를 알파벳으로 바꿔 단어를 해독하세요. (정답은 4글자, →=E, ↑=N, ↓=S, ←=W)",
     answer: "NEST",
     hint: "화살표를 방위(North, East, South, West)의 첫 글자로 바꿔보세요. 마지막 줄 4개의 타일이 정답입니다",
     imageUrl: "/questions/q5.png"
