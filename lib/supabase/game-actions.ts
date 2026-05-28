@@ -665,11 +665,11 @@ export async function getMemberStats(sessionId: string, startTimeMs: number | nu
     .sort((a, b) => b.count - a.count || (a.lastAnswerSec ?? 0) - (b.lastAnswerSec ?? 0))
 }
 
-// 정답 제출 (text / qr)
+// 정답 제출 (text / qr / updown)
 export async function submitAnswer(
   sessionId: string, teamId: number, answer: string,
   totalQuestions: number, deviceId?: string, nickname?: string
-) {
+): Promise<{ isCorrect: boolean; hint?: "up" | "down" }> {
   const supabase = createClient()
 
   const { data: team } = await supabase
@@ -683,12 +683,27 @@ export async function submitAnswer(
 
   const { data: question } = await supabase
     .from("questions")
-    .select("answer")
+    .select("answer, type")
     .eq("session_id", sessionId)
     .eq("question_number", team.current_question)
     .single()
 
   if (!question) return { isCorrect: false }
+
+  // 업다운 문제: 숫자 비교로 정답/위/아래 판정
+  if (question.type === "updown") {
+    const target = parseInt(question.answer, 10)
+    const guess = parseInt(answer.trim(), 10)
+    if (!Number.isFinite(guess)) return { isCorrect: false }
+    if (guess === target) {
+      await Promise.all([
+        advanceTeam(sessionId, teamId, team.current_question, totalQuestions),
+        recordCorrectAnswer(sessionId, teamId, deviceId || "", nickname || null, team.current_question),
+      ])
+      return { isCorrect: true }
+    }
+    return { isCorrect: false, hint: guess < target ? "up" : "down" }
+  }
 
   const isCorrect = answer.toLowerCase().trim() === question.answer.toLowerCase().trim()
 

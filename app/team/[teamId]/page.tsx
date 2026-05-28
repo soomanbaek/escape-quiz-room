@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS, PASS_PENALTY_SECONDS, WRONG_ANSWER_DELAY_MS, computeElapsedMs } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye, Pause, SkipForward } from "lucide-react"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye, Pause, SkipForward, ArrowUp, ArrowDown } from "lucide-react"
 
 const CRED_NICKNAME_KEY = "escape_nickname"
 const CRED_TEAM_KEY = "escape_team_id"
@@ -145,9 +145,12 @@ export default function TeamPlayPage() {
   const [showPassConfirm, setShowPassConfirm] = useState(false)
   const [passLoading, setPassLoading] = useState(false)
 
+  // 업/다운 힌트
+  const [updownHint, setUpdownHint] = useState<{ guess: string; dir: "up" | "down" } | null>(null)
+
   const team = data?.team
   const currentQuestion = data?.currentQuestion
-  const questionType: "text" | "qr" | "photo" = currentQuestion?.type || "text"
+  const questionType: "text" | "qr" | "photo" | "updown" = currentQuestion?.type || "text"
   const isGameStarted = data?.isStarted
   const gameStartTime = data?.startTime
   const pausedAt: number | null = data?.pausedAt ?? null
@@ -237,6 +240,7 @@ export default function TeamPlayPage() {
       setAnswer("")
       setWrongLockUntil(0)
       setWrongRemaining(0)
+      setUpdownHint(null)
     }
     lastQuestionRef.current = q
   }, [team?.currentQuestion])
@@ -286,7 +290,7 @@ export default function TeamPlayPage() {
     setHasJoined(true)
   }, [teamId, sessionId, nickname, mutate])
 
-  // 정답 제출 (text / qr 공용)
+  // 정답 제출 (text / qr / updown 공용)
   const submitValue = useCallback(async (value: string) => {
     if (!value.trim() || !hasJoined || isPaused) return
     if (Date.now() < wrongLockUntil) return
@@ -302,10 +306,15 @@ export default function TeamPlayPage() {
       setFeedback({ type: "correct", message: "정답입니다!" })
       setAnswer("")
       setShowHint(false)
+      setUpdownHint(null)
       setTimeout(() => {
         setIsFlashing(false)
         setFeedback({ type: null, message: "" })
       }, 1500)
+    } else if (result.hint === "up" || result.hint === "down") {
+      // 업다운 문제: 잠금/흔들기 없이 힌트만 표시
+      setUpdownHint({ guess: value.trim(), dir: result.hint })
+      setAnswer("")
     } else {
       setIsShaking(true)
       setWrongLockUntil(Date.now() + WRONG_ANSWER_DELAY_MS)
@@ -773,29 +782,32 @@ export default function TeamPlayPage() {
                 </p>
               </div>
 
-              {/* Hint */}
-              {currentQuestion?.hint && role !== "reader" && (
-                <div>
-                  {!showHint ? (
-                    <Button
-                      variant="outline"
-                      onClick={handleUseHint}
-                      disabled={!hasJoined || hintLoading}
-                      className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300 disabled:opacity-50"
-                    >
-                      {hintLoading
-                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        : <Lightbulb className="w-4 h-4 mr-2" />}
-                      {hintLoading ? "처리 중..." : `힌트 사용하기 (+${HINT_PENALTY_SECONDS}초 패널티)`}
-                    </Button>
-                  ) : (
+              {/* Hint — 사용 시 뷰어도 함께 노출 */}
+              {currentQuestion?.hint && (() => {
+                const hintRevealed = showHint || (team?.hintsUsed ?? 0) > 0
+                if (hintRevealed) {
+                  return (
                     <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
                       <Lightbulb className="w-5 h-5 text-accent shrink-0 mt-0.5" />
                       <p className="text-accent text-base">{currentQuestion.hint}</p>
                     </div>
-                  )}
-                </div>
-              )}
+                  )
+                }
+                if (role === "reader") return null
+                return (
+                  <Button
+                    variant="outline"
+                    onClick={handleUseHint}
+                    disabled={!hasJoined || hintLoading}
+                    className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300 disabled:opacity-50"
+                  >
+                    {hintLoading
+                      ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      : <Lightbulb className="w-4 h-4 mr-2" />}
+                    {hintLoading ? "처리 중..." : `힌트 사용하기 (+${HINT_PENALTY_SECONDS}초 패널티)`}
+                  </Button>
+                )
+              })()}
 
               {/* 문제 패쓰 */}
               {role !== "reader" && (
@@ -854,6 +866,23 @@ export default function TeamPlayPage() {
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/20 animate-fade-in">
               <XCircle className="w-4 h-4 shrink-0" />
               <span className="font-medium">{wrongRemaining}초 후 다시 제출할 수 있습니다.</span>
+            </div>
+          )}
+
+          {/* 업/다운 힌트 */}
+          {role !== "reader" && updownHint && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-accent/10 border border-accent/30 animate-fade-in">
+              {updownHint.dir === "up" ? (
+                <ArrowUp className="w-5 h-5 text-accent shrink-0" />
+              ) : (
+                <ArrowDown className="w-5 h-5 text-accent shrink-0" />
+              )}
+              <div className="text-sm">
+                <span className="font-mono font-bold text-foreground">{updownHint.guess}</span>
+                <span className="text-muted-foreground"> — 정답은 </span>
+                <span className="text-accent font-semibold">{updownHint.dir === "up" ? "더 큰 값(↑)" : "더 작은 값(↓)"}</span>
+                <span className="text-muted-foreground">입니다.</span>
+              </div>
             </div>
           )}
 
@@ -933,6 +962,26 @@ export default function TeamPlayPage() {
                 </form>
               </div>
             </>
+          ) : questionType === "updown" ? (
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <Input
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                placeholder="YYYYMMDD (8자리)"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={8}
+                className="h-14 text-base font-mono tracking-wider bg-input border-border focus:border-primary/60 focus:shadow-[0_0_12px_oklch(0.75_0.18_145_/_0.2)] transition-all duration-300"
+                autoComplete="off"
+              />
+              <Button
+                type="submit"
+                className="h-14 px-6 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-40 shrink-0"
+                disabled={answer.length !== 8}
+              >
+                제출
+              </Button>
+            </form>
           ) : (
             <div
               className={isShaking ? "animate-shake" : ""}

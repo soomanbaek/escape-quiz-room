@@ -1,4 +1,4 @@
-export type QuestionType = "text" | "qr" | "photo"
+export type QuestionType = "text" | "qr" | "photo" | "updown"
 
 export interface Question {
   id: number
@@ -54,7 +54,7 @@ export const HINT_PENALTY_SECONDS = 120
 export const PASS_PENALTY_SECONDS = 300  // 문제 패쓰 패널티
 export const WRONG_ANSWER_DELAY_MS = 10000  // 오답 후 재시도 딜레이
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
-export const TOTAL_QUESTIONS = 9
+export const TOTAL_QUESTIONS = 10
 
 export const SAMPLE_QUESTIONS: Question[] = [
   {
@@ -121,5 +121,11 @@ export const SAMPLE_QUESTIONS: Question[] = [
     type: "text",
     question: "이번 워크샵에 참석한 인원수는? (숫자로 입력)",
     answer: "46",
+  },
+  {
+    id: 10,
+    type: "updown",
+    question: "카카오뱅크가 1000만 고객을 달성한 시기는? (YYYYMMDD 8자리 숫자)\n\n제출하면 정답이 더 위(↑)인지 아래(↓)인지 알려드립니다.",
+    answer: "20190711",
   },
 ]

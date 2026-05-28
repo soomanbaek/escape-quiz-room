@@ -65,7 +65,7 @@ export async function POST(
       // 일시정지 중에는 제출 차단
       if (session.paused_at) return NextResponse.json({ isCorrect: false, paused: true })
       const result = await submitAnswer(session.id, teamIdNum, answer, TOTAL_QUESTIONS, playerSessionId, nickname)
-      return NextResponse.json({ isCorrect: result.isCorrect })
+      return NextResponse.json({ isCorrect: result.isCorrect, hint: result.hint })
     }
 
     if (action === "pass") {
