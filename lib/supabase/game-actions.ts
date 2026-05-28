@@ -352,7 +352,8 @@ export async function startGame() {
       .eq("id", session.id)
   }
 
-  await supabase
+  // 팀 상태 리셋. hint_revealed_question 컬럼 없는 환경 대응 fallback.
+  const teamReset = await supabase
     .from("teams")
     .update({
       start_time: now,
@@ -362,9 +363,25 @@ export async function startGame() {
       end_time: null,
       is_finished: false,
       has_player: false,
-      player_session_id: null
+      player_session_id: null,
+      hint_revealed_question: null,
     })
     .eq("session_id", session.id)
+  if (teamReset.error) {
+    await supabase
+      .from("teams")
+      .update({
+        start_time: now,
+        current_question: 1,
+        hints_used: 0,
+        penalty_seconds: 0,
+        end_time: null,
+        is_finished: false,
+        has_player: false,
+        player_session_id: null,
+      })
+      .eq("session_id", session.id)
+  }
 
   bustSessionCache()  // is_started 변경됨
   return getGameState()
@@ -793,13 +810,17 @@ export async function registerPlayer(sessionId: string, teamId: number, playerSe
     return { success: true }
   }
 
-  await supabase
+  // 낙관적 잠금: has_player=false 인 상태에서만 update 성공 → race 시 첫 요청만 통과
+  const { data: updated } = await supabase
     .from("teams")
     .update({ has_player: true, player_session_id: playerSessionId })
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
+    .eq("has_player", false)
+    .select("player_session_id")
+    .maybeSingle()
 
-  return { success: true }
+  return { success: !!updated }
 }
 
 // 팀 접속 세션 강제 초기화 (어드민용) - 모든 팀원 접속 해제
