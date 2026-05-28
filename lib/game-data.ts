@@ -117,9 +117,11 @@ export const SAMPLE_QUESTIONS: Question[] = [
   },
   {
     id: 9,
-    type: "updown",
-    question: "카카오뱅크가 1000만 고객을 달성한 시기는? (YYYYMMDD 8자리 숫자)\n\n제출하면 정답이 더 위(↑)인지 아래(↓)인지 알려드립니다.",
-    answer: "20190711",
+    type: "text",
+    question: "스위치 ON/OFF 상태를 단어 사이에 끼워 넣으면 새로운 단어가 됩니다. ?에 들어갈 단어는?",
+    answer: "OFFICE",
+    hint: "스위치 상태(ON/OFF)를 양쪽 글자 사이에 그대로 끼워 넣어보세요.",
+    imageUrl: "/questions/q9.png",
   },
   {
     id: 10,
@@ -131,10 +133,8 @@ export const SAMPLE_QUESTIONS: Question[] = [
   },
   {
     id: 11,
-    type: "text",
-    question: "스위치 ON/OFF 상태를 단어 사이에 끼워 넣으면 새로운 단어가 됩니다. ?에 들어갈 단어는?",
-    answer: "OFFICE",
-    hint: "스위치 상태(ON/OFF)를 양쪽 글자 사이에 그대로 끼워 넣어보세요.",
-    imageUrl: "/questions/q11.png",
+    type: "updown",
+    question: "카카오뱅크가 1000만 고객을 달성한 시기는? (YYYYMMDD 8자리 숫자)\n\n제출하면 정답이 더 위(↑)인지 아래(↓)인지 알려드립니다.",
+    answer: "20190711",
   },
 ]
