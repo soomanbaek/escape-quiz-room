@@ -60,10 +60,8 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 1,
     type: "text",
-    question: "각 사각형 안의 선분이 알파벳 획을 나타냅니다. 4개의 사각형이 만드는 단어는?",
-    answer: "EXIT",
-    hint: "사각형 안의 선분이 알파벳 한 획처럼 생겼습니다. 각 선분이 어느 글자의 특징적인 부분인지 생각해보세요",
-    imageUrl: "/questions/q1.png"
+    question: "이번 워크샵에 참석한 인원수는? (숫자로 입력)",
+    answer: "46",
   },
   {
     id: 2,
@@ -119,8 +117,10 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 9,
     type: "text",
-    question: "이번 워크샵에 참석한 인원수는? (숫자로 입력)",
-    answer: "46",
+    question: "각 사각형 안의 선분이 알파벳 획을 나타냅니다. 4개의 사각형이 만드는 단어는?",
+    answer: "EXIT",
+    hint: "사각형 안의 선분이 알파벳 한 획처럼 생겼습니다. 각 선분이 어느 글자의 특징적인 부분인지 생각해보세요",
+    imageUrl: "/questions/q9.png"
   },
   {
     id: 10,
