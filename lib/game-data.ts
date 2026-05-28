@@ -118,7 +118,7 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 9,
     type: "text",
-    question: "?에 들어갈 단어를 영어로 답하세요.",
+    question: "?에 들어갈 단어를 영어로 답하세요. (6글자)",
     answer: "OFFICE",
     hint: "스위치 상태(ON/OFF)를 양쪽 글자 사이에 그대로 끼워 넣어보세요.",
     imageUrl: "/questions/q9.png",
