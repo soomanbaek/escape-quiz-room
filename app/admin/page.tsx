@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import Link from "next/link"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -173,19 +174,26 @@ function AnswerCheatSheet() {
   return (
     <Card className="border-border/50 animate-fade-in-up" style={{ animationDelay: "0.75s" }}>
       <CardHeader>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="text-lg flex items-center gap-2">
             <Key className="w-5 h-5 text-primary" />
             문제 정답 (운영용)
           </CardTitle>
-          <Button
-            onClick={() => setShow(s => !s)}
-            variant="outline"
-            size="sm"
-            className="h-8 border-border/50"
-          >
-            {show ? <><EyeOff className="w-4 h-4 mr-1" />숨기기</> : <><Eye className="w-4 h-4 mr-1" />정답 보기</>}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/admin/questions">
+              <Button variant="outline" size="sm" className="h-8 border-border/50">
+                전체 보기
+              </Button>
+            </Link>
+            <Button
+              onClick={() => setShow(s => !s)}
+              variant="outline"
+              size="sm"
+              className="h-8 border-border/50"
+            >
+              {show ? <><EyeOff className="w-4 h-4 mr-1" />숨기기</> : <><Eye className="w-4 h-4 mr-1" />정답 보기</>}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       {show && (
