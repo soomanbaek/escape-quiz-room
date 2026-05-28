@@ -219,6 +219,7 @@ function transformTeam(team: {
   is_finished: boolean
   has_player: boolean
   player_session_id: string | null
+  hint_revealed_question?: number | null
 }) {
   return {
     teamId: team.team_id,
@@ -230,7 +231,8 @@ function transformTeam(team: {
     endTime: team.end_time ? new Date(team.end_time).getTime() : null,
     isFinished: team.is_finished,
     hasPlayer: team.has_player,
-    playerSessionId: team.player_session_id
+    playerSessionId: team.player_session_id,
+    hintRevealedQuestion: team.hint_revealed_question ?? null,
   }
 }
 
@@ -436,32 +438,54 @@ export async function getCurrentQuestion(sessionId: string, questionNumber: numb
   return question
 }
 
-// 힌트 사용 (낙관적 잠금으로 멀티 디바이스 중복 적용 방지)
+// 힌트 사용 (낙관적 잠금: 같은 문제에서 중복 적용 방지)
 export async function useHint(sessionId: string, teamId: number) {
   const supabase = createClient()
 
   const { data: team } = await supabase
     .from("teams")
-    .select("hints_used, penalty_seconds")
+    .select("hints_used, penalty_seconds, current_question, hint_revealed_question")
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
     .single()
 
   if (!team) return false
 
-  // WHERE hints_used = 현재값 조건으로 동시 요청 중 하나만 반영됨
+  // 이미 이 문제의 힌트가 공개됐다면 중복 차감 방지
+  if (team.hint_revealed_question === team.current_question) return true
+
+  // hint_revealed_question != current_question 조건으로 동시 요청 중 하나만 반영됨
+  const baseUpdate = {
+    hints_used: team.hints_used + 1,
+    penalty_seconds: team.penalty_seconds + HINT_PENALTY_SECONDS,
+    hint_revealed_question: team.current_question,
+  }
+  let q = supabase
+    .from("teams")
+    .update(baseUpdate)
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .eq("hints_used", team.hints_used)
+  if (team.hint_revealed_question === null) {
+    q = q.is("hint_revealed_question", null)
+  } else {
+    q = q.eq("hint_revealed_question", team.hint_revealed_question)
+  }
+  const res = await q.select("hints_used").maybeSingle()
+  if (!res.error) return !!res.data
+
+  // hint_revealed_question 컬럼 없는 환경: 기존 로직으로 fallback
   const { data: updated } = await supabase
     .from("teams")
     .update({
       hints_used: team.hints_used + 1,
-      penalty_seconds: team.penalty_seconds + HINT_PENALTY_SECONDS
+      penalty_seconds: team.penalty_seconds + HINT_PENALTY_SECONDS,
     })
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
     .eq("hints_used", team.hints_used)
     .select("hints_used")
     .maybeSingle()
-
   return !!updated
 }
 

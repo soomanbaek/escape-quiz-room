@@ -825,7 +825,7 @@ export default function TeamPlayPage() {
 
               {/* Hint — 사용 시 뷰어도 함께 노출 */}
               {currentQuestion?.hint && (() => {
-                const hintRevealed = showHint || (team?.hintsUsed ?? 0) > 0
+                const hintRevealed = showHint || team?.hintRevealedQuestion === team?.currentQuestion
                 if (hintRevealed) {
                   return (
                     <div className="flex items-start gap-3 p-4 bg-accent/10 border border-accent/30 rounded-lg animate-fade-in">
