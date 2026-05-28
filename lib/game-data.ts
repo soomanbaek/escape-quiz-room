@@ -50,7 +50,9 @@ export function computeElapsedMs(
   return Math.max(0, reference - startTime - totalPausedMs)
 }
 
-export const HINT_PENALTY_SECONDS = 30
+export const HINT_PENALTY_SECONDS = 120
+export const PASS_PENALTY_SECONDS = 300  // 문제 패쓰 패널티
+export const WRONG_ANSWER_DELAY_MS = 10000  // 오답 후 재시도 딜레이
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
 export const TOTAL_QUESTIONS = 9
 

@@ -7,8 +7,8 @@ import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS, computeElapsedMs } from "@/lib/game-data"
-import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye, Pause } from "lucide-react"
+import { TOTAL_QUESTIONS, HINT_PENALTY_SECONDS, PASS_PENALTY_SECONDS, WRONG_ANSWER_DELAY_MS, computeElapsedMs } from "@/lib/game-data"
+import { Clock, Lightbulb, Trophy, CheckCircle2, XCircle, Users, QrCode, Camera, X, Loader2, LogOut, Crown, Eye, Pause, SkipForward } from "lucide-react"
 
 const CRED_NICKNAME_KEY = "escape_nickname"
 const CRED_TEAM_KEY = "escape_team_id"
@@ -137,6 +137,14 @@ export default function TeamPlayPage() {
   const [questionKey, setQuestionKey] = useState(0)
   const lastQuestionRef = useRef<number | null>(null)
 
+  // 오답 후 재시도 잠금 (10초)
+  const [wrongLockUntil, setWrongLockUntil] = useState(0)
+  const [wrongRemaining, setWrongRemaining] = useState(0)
+
+  // 문제 패쓰
+  const [showPassConfirm, setShowPassConfirm] = useState(false)
+  const [passLoading, setPassLoading] = useState(false)
+
   const team = data?.team
   const currentQuestion = data?.currentQuestion
   const questionType: "text" | "qr" | "photo" = currentQuestion?.type || "text"
@@ -227,9 +235,27 @@ export default function TeamPlayPage() {
       setShowHint(false)
       setPhotoResult(null)
       setAnswer("")
+      setWrongLockUntil(0)
+      setWrongRemaining(0)
     }
     lastQuestionRef.current = q
   }, [team?.currentQuestion])
+
+  // 오답 잠금 카운트다운
+  useEffect(() => {
+    if (wrongLockUntil <= 0) {
+      setWrongRemaining(0)
+      return
+    }
+    const tick = () => {
+      const left = Math.max(0, wrongLockUntil - Date.now())
+      setWrongRemaining(Math.ceil(left / 1000))
+      if (left <= 0) setWrongLockUntil(0)
+    }
+    tick()
+    const interval = setInterval(tick, 200)
+    return () => clearInterval(interval)
+  }, [wrongLockUntil])
 
   // 팀 입장 (역할 선택)
   const handleJoinAs = useCallback(async (selectedRole: "writer" | "reader") => {
@@ -263,6 +289,7 @@ export default function TeamPlayPage() {
   // 정답 제출 (text / qr 공용)
   const submitValue = useCallback(async (value: string) => {
     if (!value.trim() || !hasJoined || isPaused) return
+    if (Date.now() < wrongLockUntil) return
     const res = await fetch(`/api/team/${teamId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -281,11 +308,12 @@ export default function TeamPlayPage() {
       }, 1500)
     } else {
       setIsShaking(true)
-      setFeedback({ type: "incorrect", message: "오답입니다. 다시 시도해주세요." })
+      setWrongLockUntil(Date.now() + WRONG_ANSWER_DELAY_MS)
+      setFeedback({ type: "incorrect", message: "오답입니다. 잠시 후 다시 시도해주세요." })
       setTimeout(() => setFeedback({ type: null, message: "" }), 2000)
     }
     mutate()
-  }, [teamId, hasJoined, isPaused, sessionId, nickname, mutate])
+  }, [teamId, hasJoined, isPaused, wrongLockUntil, sessionId, nickname, mutate])
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -324,6 +352,29 @@ export default function TeamPlayPage() {
       setPhotoLoading(false)
     }
   }, [teamId, hasJoined, isPaused, mutate])
+
+  // 문제 패쓰 (5분 패널티)
+  const handlePass = useCallback(async () => {
+    if (!hasJoined || passLoading || isPaused) return
+    setPassLoading(true)
+    try {
+      const res = await fetch(`/api/team/${teamId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pass" })
+      })
+      const result = await res.json().catch(() => ({ success: false }))
+      if (!result.success) {
+        alert(result.paused ? "일시정지 중에는 패쓰할 수 없습니다." : "패쓰에 실패했습니다. 다시 시도해주세요.")
+      } else {
+        setShowPassConfirm(false)
+        setWrongLockUntil(0)
+      }
+      mutate()
+    } finally {
+      setPassLoading(false)
+    }
+  }, [teamId, hasJoined, isPaused, passLoading, mutate])
 
   // 힌트 사용
   const handleUseHint = useCallback(async () => {
@@ -581,6 +632,44 @@ export default function TeamPlayPage() {
 
       {qrOpen && <QrScanner onResult={handleQrResult} onClose={() => setQrOpen(false)} />}
 
+      {/* 패쓰 확인 팝업 */}
+      {showPassConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-fade-in" onClick={() => !passLoading && setShowPassConfirm(false)}>
+          <Card className="w-full max-w-xs border-destructive/40 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <CardContent className="p-6 text-center space-y-4">
+              <div className="w-14 h-14 mx-auto rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+                <SkipForward className="w-7 h-7 text-destructive" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-lg font-bold text-foreground">문제 패쓰</h3>
+                <p className="text-sm text-muted-foreground">
+                  이 문제를 건너뜁니다.<br />
+                  <span className="text-destructive font-semibold">+{PASS_PENALTY_SECONDS}초 패널티</span>가 부여됩니다.<br />
+                  정말 패쓰하시겠습니까?
+                </p>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPassConfirm(false)}
+                  disabled={passLoading}
+                  className="flex-1 h-11 border-border/60"
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={handlePass}
+                  disabled={passLoading}
+                  className="flex-1 h-11 bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                >
+                  {passLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "패쓰"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* 일시정지 오버레이 */}
       {isPaused && (
         <div className="absolute inset-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
@@ -707,6 +796,19 @@ export default function TeamPlayPage() {
                   )}
                 </div>
               )}
+
+              {/* 문제 패쓰 */}
+              {role !== "reader" && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPassConfirm(true)}
+                  disabled={!hasJoined || passLoading || isPaused}
+                  className="w-full h-12 text-base border-destructive/40 text-destructive hover:bg-destructive/10 hover:border-destructive/70 transition-all duration-300 disabled:opacity-50"
+                >
+                  <SkipForward className="w-4 h-4 mr-2" />
+                  {`문제 패쓰 (+${PASS_PENALTY_SECONDS}초 패널티)`}
+                </Button>
+              )}
             </CardContent>
           </Card>
 
@@ -744,6 +846,14 @@ export default function TeamPlayPage() {
                 : <XCircle className="w-4 h-4 shrink-0" />
               }
               <span className="font-medium">{feedback.message}</span>
+            </div>
+          )}
+
+          {/* 오답 재시도 잠금 안내 */}
+          {role !== "reader" && wrongRemaining > 0 && !feedback.type && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/20 animate-fade-in">
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span className="font-medium">{wrongRemaining}초 후 다시 제출할 수 있습니다.</span>
             </div>
           )}
 
@@ -796,10 +906,11 @@ export default function TeamPlayPage() {
             <>
               <Button
                 onClick={() => setQrOpen(true)}
-                className="w-full h-14 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300"
+                disabled={wrongRemaining > 0}
+                className="w-full h-14 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-60"
               >
                 <QrCode className="w-5 h-5 mr-2" />
-                QR 코드 스캔하기
+                {wrongRemaining > 0 ? `${wrongRemaining}초 후 재시도 가능` : "QR 코드 스캔하기"}
               </Button>
               <div
                 className={isShaking ? "animate-shake" : ""}
@@ -809,14 +920,15 @@ export default function TeamPlayPage() {
                   <Input
                     value={answer}
                     onChange={(e) => setAnswer(e.target.value)}
-                    placeholder="또는 코드 직접 입력..."
-                    className="h-12 text-base bg-input border-border focus:border-primary/60"
+                    placeholder={wrongRemaining > 0 ? `${wrongRemaining}초 대기 중...` : "또는 코드 직접 입력..."}
+                    disabled={wrongRemaining > 0}
+                    className="h-12 text-base bg-input border-border focus:border-primary/60 disabled:opacity-60"
                     autoComplete="off"
                     autoCorrect="off"
                     autoCapitalize="off"
                   />
-                  <Button type="submit" className="h-12 px-5 shrink-0" disabled={!answer.trim()}>
-                    제출
+                  <Button type="submit" className="h-12 px-5 shrink-0" disabled={!answer.trim() || wrongRemaining > 0}>
+                    {wrongRemaining > 0 ? `${wrongRemaining}s` : "제출"}
                   </Button>
                 </form>
               </div>
@@ -830,8 +942,9 @@ export default function TeamPlayPage() {
                 <Input
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="정답 입력..."
-                  className="h-14 text-base bg-input border-border focus:border-primary/60 focus:shadow-[0_0_12px_oklch(0.75_0.18_145_/_0.2)] transition-all duration-300"
+                  placeholder={wrongRemaining > 0 ? `${wrongRemaining}초 대기 중...` : "정답 입력..."}
+                  disabled={wrongRemaining > 0}
+                  className="h-14 text-base bg-input border-border focus:border-primary/60 focus:shadow-[0_0_12px_oklch(0.75_0.18_145_/_0.2)] transition-all duration-300 disabled:opacity-60"
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="off"
@@ -839,9 +952,9 @@ export default function TeamPlayPage() {
                 <Button
                   type="submit"
                   className="h-14 px-6 text-base bg-primary hover:bg-primary/90 text-primary-foreground hover:shadow-[0_0_20px_oklch(0.75_0.18_145_/_0.4)] transition-all duration-300 disabled:opacity-40 shrink-0"
-                  disabled={!answer.trim()}
+                  disabled={!answer.trim() || wrongRemaining > 0}
                 >
-                  제출
+                  {wrongRemaining > 0 ? `${wrongRemaining}s` : "제출"}
                 </Button>
               </form>
             </div>

@@ -4,6 +4,7 @@ import {
   getLatestSession,
   useHint,
   submitAnswer,
+  passTeamQuestion,
   registerPlayer,
   unregisterPlayer,
   joinTeam,
@@ -65,6 +66,12 @@ export async function POST(
       if (session.paused_at) return NextResponse.json({ isCorrect: false, paused: true })
       const result = await submitAnswer(session.id, teamIdNum, answer, TOTAL_QUESTIONS, playerSessionId, nickname)
       return NextResponse.json({ isCorrect: result.isCorrect })
+    }
+
+    if (action === "pass") {
+      if (session.paused_at) return NextResponse.json({ success: false, paused: true })
+      const result = await passTeamQuestion(session.id, teamIdNum, TOTAL_QUESTIONS)
+      return NextResponse.json(result)
     }
 
     if (action === "register") {

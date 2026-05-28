@@ -2,7 +2,7 @@
 
 // Supabase 게임 액션 - DB 연동
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
-import { SAMPLE_QUESTIONS, TEAM_NAMES, PHOTO_PASS_THRESHOLD } from "../game-data"
+import { SAMPLE_QUESTIONS, TEAM_NAMES, PHOTO_PASS_THRESHOLD, HINT_PENALTY_SECONDS, PASS_PENALTY_SECONDS } from "../game-data"
 import { judgePhoto } from "../anthropic/photo-judge"
 
 // 팀원 접속 활성 판정 시간 (이 시간 내 하트비트가 있으면 접속 중)
@@ -454,7 +454,7 @@ export async function useHint(sessionId: string, teamId: number) {
     .from("teams")
     .update({
       hints_used: team.hints_used + 1,
-      penalty_seconds: team.penalty_seconds + 30
+      penalty_seconds: team.penalty_seconds + HINT_PENALTY_SECONDS
     })
     .eq("session_id", sessionId)
     .eq("team_id", teamId)
@@ -503,6 +503,36 @@ export async function skipTeamQuestion(sessionId: string, teamId: number, totalQ
     .single()
 
   if (!team || team.is_finished) return { success: false }
+
+  await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
+  return { success: true }
+}
+
+// 팀이 직접 문제를 패쓰 (패널티 5분 부여)
+export async function passTeamQuestion(sessionId: string, teamId: number, totalQuestions: number) {
+  const supabase = createClient()
+
+  const { data: team } = await supabase
+    .from("teams")
+    .select("current_question, is_finished, penalty_seconds")
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .single()
+
+  if (!team || team.is_finished) return { success: false }
+
+  // 낙관적 잠금: penalty_seconds 변동 시 다른 요청이 이긴 것으로 보고 abort
+  const { data: updated } = await supabase
+    .from("teams")
+    .update({ penalty_seconds: team.penalty_seconds + PASS_PENALTY_SECONDS })
+    .eq("session_id", sessionId)
+    .eq("team_id", teamId)
+    .eq("penalty_seconds", team.penalty_seconds)
+    .eq("current_question", team.current_question)
+    .select("penalty_seconds")
+    .maybeSingle()
+
+  if (!updated) return { success: false }
 
   await advanceTeam(sessionId, teamId, team.current_question, totalQuestions)
   return { success: true }
