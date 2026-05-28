@@ -145,6 +145,9 @@ export default function TeamPlayPage() {
   const [showPassConfirm, setShowPassConfirm] = useState(false)
   const [passLoading, setPassLoading] = useState(false)
 
+  // 힌트 확인
+  const [showHintConfirm, setShowHintConfirm] = useState(false)
+
   // 업/다운 힌트
   const [updownHint, setUpdownHint] = useState<{ guess: string; dir: "up" | "down" } | null>(null)
 
@@ -679,6 +682,44 @@ export default function TeamPlayPage() {
         </div>
       )}
 
+      {/* 힌트 확인 팝업 */}
+      {showHintConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-fade-in" onClick={() => !hintLoading && setShowHintConfirm(false)}>
+          <Card className="w-full max-w-xs border-accent/40 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <CardContent className="p-6 text-center space-y-4">
+              <div className="w-14 h-14 mx-auto rounded-full bg-accent/10 border border-accent/30 flex items-center justify-center">
+                <Lightbulb className="w-7 h-7 text-accent" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-lg font-bold text-foreground">힌트 사용</h3>
+                <p className="text-sm text-muted-foreground">
+                  이 문제의 힌트를 확인합니다.<br />
+                  <span className="text-accent font-semibold">+{HINT_PENALTY_SECONDS}초 패널티</span>가 부여됩니다.<br />
+                  힌트를 보시겠습니까?
+                </p>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowHintConfirm(false)}
+                  disabled={hintLoading}
+                  className="flex-1 h-11 border-border/60"
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={async () => { await handleUseHint(); setShowHintConfirm(false) }}
+                  disabled={hintLoading}
+                  className="flex-1 h-11 bg-accent hover:bg-accent/90 text-accent-foreground"
+                >
+                  {hintLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "힌트 보기"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* 일시정지 오버레이 */}
       {isPaused && (
         <div className="absolute inset-0 z-50 bg-background/90 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in">
@@ -797,7 +838,7 @@ export default function TeamPlayPage() {
                 return (
                   <Button
                     variant="outline"
-                    onClick={handleUseHint}
+                    onClick={() => setShowHintConfirm(true)}
                     disabled={!hasJoined || hintLoading}
                     className="w-full h-12 text-base border-accent/50 text-accent hover:bg-accent/10 hover:border-accent hover:shadow-[0_0_12px_oklch(0.85_0.2_85_/_0.2)] transition-all duration-300 disabled:opacity-50"
                   >
