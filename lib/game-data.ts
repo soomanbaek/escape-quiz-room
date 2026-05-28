@@ -54,7 +54,7 @@ export const HINT_PENALTY_SECONDS = 120
 export const PASS_PENALTY_SECONDS = 300  // 문제 패쓰 패널티
 export const WRONG_ANSWER_DELAY_MS = 10000  // 오답 후 재시도 딜레이
 export const PHOTO_PASS_THRESHOLD = 70  // 사진 미션 통과 기준 점수
-export const TOTAL_QUESTIONS = 11
+export const TOTAL_QUESTIONS = 12
 
 export const SAMPLE_QUESTIONS: Question[] = [
   {
@@ -135,5 +135,13 @@ export const SAMPLE_QUESTIONS: Question[] = [
     answer: "COUNTRY",
     hint: "각 위치에서 위·아래 두 글자 사이에 오는 알파벳을 찾으세요.",
     imageUrl: "/questions/q11.png",
+  },
+  {
+    id: 12,
+    type: "text",
+    question: "스위치 ON/OFF 상태를 단어 사이에 끼워 넣으면 새로운 단어가 됩니다. ?에 들어갈 단어는?",
+    answer: "OFFICE",
+    hint: "스위치 상태(ON/OFF)를 양쪽 글자 사이에 그대로 끼워 넣어보세요.",
+    imageUrl: "/questions/q12.png",
   },
 ]
