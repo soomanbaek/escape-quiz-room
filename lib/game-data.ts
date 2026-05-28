@@ -133,7 +133,7 @@ export const SAMPLE_QUESTIONS: Question[] = [
     type: "text",
     question: "두 줄의 글자 '사이'를 읽어 단어를 만드세요. (영어 7글자)",
     answer: "COUNTRY",
-    hint: "각 위치에서 위·아래 두 글자 사이에 오는 알파벳을 찾으세요. 예) B-D 사이는 C",
+    hint: "각 위치에서 위·아래 두 글자 사이에 오는 알파벳을 찾으세요.",
     imageUrl: "/questions/q11.png",
   },
 ]
