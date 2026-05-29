@@ -90,7 +90,7 @@ export const SAMPLE_QUESTIONS: Question[] = [
   {
     id: 5,
     type: "qr",
-    question: "주변에 숨겨진 QR 코드를 찾아 스캔하세요! 올바른 QR 코드만 통과됩니다.",
+    question: "실외에 숨겨진 QR 코드를 찾아 스캔하세요! 총 5개의 QR 중 1개만 정답이며, 올바른 QR 코드만 통과됩니다.",
     answer: "SIGNAL",
   },
   {
